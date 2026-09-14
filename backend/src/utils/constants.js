@@ -1,0 +1,34 @@
+const ROLES = {
+  ADMIN: "ADMIN",
+  VENDOR: "VENDOR",
+  USER: "USER",
+};
+
+const ROLE_ENUM = [ROLES.ADMIN, ROLES.VENDOR, ROLES.USER];
+
+const REGISTRATION_TYPES = {
+  PERSONAL_USE: "PERSONAL_USE",
+  BUSINESS_PURPOSE: "BUSINESS_PURPOSE",
+  RESELLER: "RESELLER",
+};
+
+const RESELLER_CATEGORIES = [
+  "Designer",
+  "Printer",
+  "Ad Agency",
+  "Directory Business Listed Person",
+];
+
+const RESELLER_STATUS = {
+  PENDING: "PENDING",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+};
+
+module.exports = {
+  ROLES,
+  ROLE_ENUM,
+  REGISTRATION_TYPES,
+  RESELLER_CATEGORIES,
+  RESELLER_STATUS,
+};

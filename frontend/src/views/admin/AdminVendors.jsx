@@ -1,0 +1,356 @@
+"use client";
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  Search,
+  Trash2,
+  Eye,
+  Loader2,
+  MoreHorizontal,
+  UserCheck,
+  UserX,
+  Store,
+  Building2,
+  Mail,
+  Phone,
+  Calendar,
+} from "lucide-react";
+import { getVendors, toggleVendorStatus, deleteVendor } from "../../services/adminService";
+import { PageHeader } from "../../components/shared/page-header";
+import { StatusBadge } from "../../components/shared/status-badge";
+import { EmptyState } from "../../components/shared/empty-state";
+import { PageLoader } from "../../components/shared/page-loader";
+import { Card, CardContent } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { Button } from "../../components/ui/button";
+import { Badge } from "../../components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../../components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../../components/ui/dialog";
+import { Avatar, AvatarFallback } from "../../components/ui/avatar";
+import CopyableId from "../../components/admin/CopyableId";
+import UnifiedViewDialog from "./UnifiedViewDialog";
+
+const AdminVendors = () => {
+  const [vendors, setVendors] = useState([]);
+  const [pagination, setPagination] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [actionLoading, setActionLoading] = useState(null);
+  const [error, setError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [viewTarget, setViewTarget] = useState(null);
+  const debounceRef = useRef(null);
+
+  const fetchVendors = async (p = 1, s = "") => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await getVendors(p, s);
+      setVendors(res.data.vendors);
+      setPagination(res.data.pagination);
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to load vendors");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchVendors(page, search);
+  }, [page]);
+
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setPage(1);
+      fetchVendors(1, value);
+    }, 400);
+  };
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setPage(1);
+    fetchVendors(1, search);
+  };
+
+  const handleToggle = async (id) => {
+    try {
+      setActionLoading(id);
+      setError("");
+      const res = await toggleVendorStatus(id);
+      setVendors((prev) =>
+        prev.map((v) => (v._id === id ? { ...v, isActive: res.data.vendor.isActive } : v))
+      );
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to update vendor status");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    try {
+      setDeleteLoading(true);
+      setError("");
+      await deleteVendor(deleteTarget._id);
+      setVendors((prev) => prev.filter((v) => v._id !== deleteTarget._id));
+      if (pagination) {
+        const newTotal = pagination.total - 1;
+        const newPages = Math.ceil(newTotal / pagination.limit);
+        setPagination((prev) => ({ ...prev, total: newTotal, pages: newPages }));
+        if (page > newPages && newPages > 0) {
+          setPage(newPages);
+        }
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to delete vendor");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const getInitials = (name) => {
+    if (!name) return "?";
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Vendors"
+        description="Manage registered vendors and their platform access."
+      />
+
+      {error && (
+        <div className="flex items-center justify-between rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <span>{error}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-destructive hover:text-destructive"
+            onClick={() => setError("")}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="flex flex-col gap-3 border-b px-6 py-4 sm:flex-row sm:items-center">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search vendors..."
+                value={search}
+                onChange={handleSearchChange}
+                onSubmit={handleSearchSubmit}
+                className="pl-9"
+              />
+            </div>
+            {pagination && (
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                {pagination.total} vendor{pagination.total !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+
+          {loading ? (
+            <PageLoader text="Loading vendors..." />
+          ) : vendors.length === 0 ? (
+            <EmptyState
+              icon={Store}
+              title="No Vendors Found"
+              description={search ? "No vendors match your search." : "No vendors have registered yet."}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead className="hidden sm:table-cell">Phone</TableHead>
+                    <TableHead className="hidden md:table-cell">Businesses</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden sm:table-cell">Joined</TableHead>
+                    <TableHead className="w-[50px]"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {vendors.map((v) => (
+                    <TableRow key={v._id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-9 w-9">
+                            <AvatarFallback className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 text-xs font-semibold">
+                              {getInitials(v.fullName)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{v.fullName}</p>
+                            <CopyableId id={v.publicId} />
+                            <p className="text-sm text-muted-foreground truncate">{v.email}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell text-muted-foreground">
+                        {v.phone || "-"}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <Badge variant="secondary" className="font-mono">
+                          <Building2 className="mr-1 h-3 w-3" />
+                          {v.businessCount}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={v.isActive ? "active" : "inactive"} />
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell text-muted-foreground">
+                        {new Date(v.createdAt).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                              <span className="sr-only">Actions</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setViewTarget(v)}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              View
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleToggle(v._id)}
+                              disabled={actionLoading === v._id}
+                            >
+                              {actionLoading === v._id ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : v.isActive ? (
+                                <UserX className="mr-2 h-4 w-4" />
+                              ) : (
+                                <UserCheck className="mr-2 h-4 w-4" />
+                              )}
+                              {v.isActive ? "Deactivate" : "Activate"}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeleteTarget(v)}
+                              disabled={actionLoading === v._id}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              {pagination && pagination.pages > 1 && (
+                <div className="flex items-center justify-between border-t px-6 py-4">
+                  <p className="text-sm text-muted-foreground">
+                    Page {pagination.page} of {pagination.pages}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={pagination.page <= 1}
+                      onClick={() => setPage((p) => p - 1)}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={pagination.page >= pagination.pages}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <UnifiedViewDialog
+        open={!!viewTarget}
+        onOpenChange={(open) => !open && setViewTarget(null)}
+        account={viewTarget}
+      />
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Vendor</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <strong>{deleteTarget?.fullName}</strong> and all
+              their businesses? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleteLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={deleteLoading}
+            >
+              {deleteLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default AdminVendors;

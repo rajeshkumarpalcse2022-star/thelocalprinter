@@ -1,0 +1,260 @@
+const mongoose = require("mongoose");
+
+const businessSchema = new mongoose.Schema(
+  {
+    vendor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: [true, "Vendor ID is required"],
+    },
+
+    // ─── Section 1: Business Information ───
+    name: {
+      type: String,
+      required: [true, "Business name is required"],
+      trim: true,
+      maxlength: [200, "Business name must be at most 200 characters"],
+    },
+    description: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: [5000, "Description must be at most 5000 characters"],
+    },
+    establishedYear: {
+      type: Number,
+      min: [1900, "Year must be 1900 or later"],
+      max: [new Date().getFullYear(), "Year cannot be in the future"],
+      default: null,
+    },
+    workingHours: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    // ─── Section 2: Contact Details ───
+    contactName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    phone: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    whatsapp: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    contactEmail: {
+      type: String,
+      trim: true,
+      default: "",
+      lowercase: true,
+    },
+    website: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    // ─── Section 3: Category & Location ───
+    category: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    categoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      default: null,
+    },
+    serviceIds: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: "Category",
+      default: [],
+    },
+    tags: {
+      type: [String],
+      default: [],
+    },
+    address: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    city: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    gpsCoordinates: {
+      lat: { type: Number, default: null },
+      lng: { type: Number, default: null },
+    },
+    googleBusinessProfileLink: {
+      type: String,
+      trim: true,
+      default: "",
+      select: false,
+    },
+
+    // ─── Section 4: GST ───
+    gstAvailable: {
+      type: Boolean,
+      default: false,
+    },
+    gstNumber: {
+      type: String,
+      trim: true,
+      default: "",
+      select: false,
+    },
+
+    // ─── Section 5: Order Limits ───
+    orderLimits: {
+      type: String,
+      enum: {
+        values: ["single", "minimum", "bulk", "no_limit"],
+        message: "Order limit must be single, minimum, bulk, or no_limit",
+      },
+      default: "no_limit",
+    },
+
+    // ─── Section 6: Services / Offering ───
+    serviceType: {
+      type: String,
+      enum: {
+        values: ["print_only", "full_with_design", "full_without_design"],
+        message: "Invalid service type",
+      },
+      default: "print_only",
+    },
+
+    // ─── Section 7: Customer Type ───
+    customerType: {
+      type: String,
+      enum: {
+        values: ["b2b", "b2c", "both"],
+        message: "Customer type must be b2b, b2c, or both",
+      },
+      default: "both",
+    },
+
+    // ─── Section 8: Ordering Method ───
+    orderingMethod: {
+      type: String,
+      enum: {
+        values: ["on_call", "shop_visit", "both"],
+        message: "Ordering method must be on_call, shop_visit, or both",
+      },
+      default: "both",
+    },
+
+    // ─── Section 9: Payment Modes ───
+    paymentModes: {
+      type: [String],
+      default: [],
+    },
+
+    // ─── Section 10: Social Media ───
+    socialMedia: {
+      facebook: { type: String, trim: true, default: "" },
+      instagram: { type: String, trim: true, default: "" },
+      youtube: { type: String, trim: true, default: "" },
+      linkedin: { type: String, trim: true, default: "" },
+      twitter: { type: String, trim: true, default: "" },
+    },
+
+    // ─── Section 11: Verification Media ───
+    // NOTE: No file storage system exists yet.
+    // These fields store placeholder paths/URLs.
+    // Actual file upload requires: multer + cloudinary/S3 integration.
+    verificationMedia: {
+      machineryWorkingVideo: { type: String, default: "" },
+      completeOutletVideo: { type: String, default: "" },
+      outdoorStoreImage: { type: String, default: "" },
+      indoorStoreImage: { type: String, default: "" },
+      thumbnailImages: { type: [String], default: [] },
+    },
+
+    // ─── Section 12: Languages ───
+    languages: {
+      type: [String],
+      default: [],
+    },
+
+    // ─── Section 13: Policies & Additional Services ───
+    returnReplacementPolicy: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    inHouseDesignerAvailable: {
+      type: Boolean,
+      default: false,
+    },
+    customerLocationVisitAvailable: {
+      type: Boolean,
+      default: false,
+    },
+    addonServices: {
+      type: [String],
+      default: [],
+    },
+
+    // ─── Section 14: Sample & File Formats ───
+    sampleDisplayAvailable: {
+      type: Boolean,
+      default: false,
+    },
+    preferredFileFormats: {
+      type: [String],
+      default: [],
+    },
+
+    // ─── Section 15: Purchase Order ───
+    acceptsPurchaseOrder: {
+      type: Boolean,
+      default: false,
+    },
+
+    // ─── Section 16: Fraud / Hotlist (PRIVATE) ───
+    fraudReport: {
+      contactName: { type: String, trim: true, default: "", select: false },
+      designation: { type: String, trim: true, default: "", select: false },
+      contactNumber: { type: String, trim: true, default: "", select: false },
+    },
+
+    // ─── System Fields ───
+    status: {
+      type: String,
+      enum: {
+        values: ["pending", "approved", "rejected"],
+        message: "Status must be pending, approved, or rejected",
+      },
+      default: "pending",
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+businessSchema.index({ vendor: 1 });
+businessSchema.index({ status: 1 });
+businessSchema.index({ createdAt: -1 });
+businessSchema.index({ category: 1 });
+businessSchema.index({ categoryId: 1 });
+businessSchema.index({ city: 1 });
+
+const Business = mongoose.model("Business", businessSchema);
+
+module.exports = Business;
