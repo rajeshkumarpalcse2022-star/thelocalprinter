@@ -5,9 +5,9 @@ import SearchBar from '../navigation/SearchBar';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import gsap from 'gsap';
 import { usePathname, useRouter } from 'next/navigation'; 
-import { Menu, X, MapPin, Search, Crosshair, Loader2, LogOut, LayoutDashboard, ChevronDown, ChevronRight } from 'lucide-react';
+import { Menu, X, MapPin, Search, Crosshair, Loader2, LogOut, LayoutDashboard, ChevronDown, ChevronRight, Heart } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { getActiveCategories } from '@/services/userService';
+import { getActiveCategories, getWishlist } from '@/services/userService';
 
 const PAGES = [
   { name: 'Home', slug: '/' },
@@ -37,6 +37,15 @@ export default function Header() {
   const mobileCategoriesRef = useRef([]);
   const mobileSearchWrapperRef = useRef(null);
   const profileRef = useRef(null);
+  const [wishlistCount, setWishlistCount] = useState(0);
+
+  useEffect(() => {
+    if (!loading && user?.role === 'USER') {
+      getWishlist(1)
+        .then((res) => setWishlistCount(res.data?.pagination?.total ?? 0))
+        .catch(() => setWishlistCount(0));
+    }
+  }, [user, loading]);
 
   const getDashboardRoute = (role) => {
     switch (role) {
@@ -194,7 +203,7 @@ export default function Header() {
     }
   }, [isMobileMenuOpen]);
 
-  const userInitial = user?.fullName ? user.fullName.charAt(0).toUpperCase() : '?';
+  const userInitial = user?.role ? user.role.charAt(0) : '?';
 
   return (
     <>
@@ -236,6 +245,22 @@ export default function Header() {
               Contact
             </Link>
 
+            {!loading && user?.role === 'USER' && (
+              <Link 
+                href="/user/wishlist" 
+                className={`relative p-2 rounded-xl transition-colors ${
+                  pathname === '/user/wishlist' ? 'bg-brand-orange/10 text-brand-orange' : 'text-brand-navy hover:bg-brand-orange/10 hover:text-brand-orange'
+                }`}
+              >
+                <Heart className="w-5 h-5" />
+                {wishlistCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand-orange px-1 text-[9px] font-bold text-white leading-none">
+                    {wishlistCount > 99 ? '99+' : wishlistCount}
+                  </span>
+                )}
+              </Link>
+            )}
+
             {!loading && (
               <>
                 {!user ? (
@@ -254,10 +279,7 @@ export default function Header() {
                       <div className="w-8 h-8 rounded-full bg-brand-orange text-white flex items-center justify-center text-[14px] font-bold shrink-0">
                         {userInitial}
                       </div>
-                      <div className="hidden xl:flex flex-col items-start leading-tight">
-                        <span className="text-[13px] font-bold text-brand-navy line-clamp-1 max-w-[100px]">{user.fullName}</span>
-                        <span className="text-[10px] font-semibold text-brand-orange uppercase tracking-wider">{user.role}</span>
-                      </div>
+
                       <ChevronDown className={`w-4 h-4 text-brand-muted transition-transform hidden xl:block ${isProfileOpen ? 'rotate-180' : ''}`} />
                     </button>
 
@@ -430,6 +452,19 @@ export default function Header() {
             <Link href="/contact" onClick={() => setIsMobileMenuOpen(false)} className="p-4 rounded-xl text-brand-navy bg-brand-light/50 hover:bg-brand-orange/10 hover:text-brand-orange transition-colors">
               Contact
             </Link>
+            {!loading && user?.role === 'USER' && (
+              <Link href="/user/wishlist" onClick={() => setIsMobileMenuOpen(false)} className={`relative flex items-center gap-3 p-4 rounded-xl text-brand-navy bg-brand-light/50 hover:bg-brand-orange/10 hover:text-brand-orange transition-colors ${pathname === '/user/wishlist' ? 'bg-brand-orange/10 text-brand-orange' : ''}`}>
+                <span className="relative">
+                  <Heart className="w-5 h-5" />
+                  {wishlistCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand-orange px-1 text-[9px] font-bold text-white leading-none">
+                      {wishlistCount > 99 ? '99+' : wishlistCount}
+                    </span>
+                  )}
+                </span>
+                Wishlist
+              </Link>
+            )}
           </nav>
         </div>
 
@@ -449,10 +484,7 @@ export default function Header() {
                     <div className="w-10 h-10 rounded-full bg-brand-orange text-white flex items-center justify-center text-[16px] font-bold shrink-0">
                       {userInitial}
                     </div>
-                    <div className="flex flex-col items-start leading-tight flex-1 min-w-0">
-                      <span className="text-[14px] font-bold text-brand-navy line-clamp-1">{user.fullName}</span>
-                      <span className="text-[11px] font-semibold text-brand-orange uppercase tracking-wider">{user.role}</span>
-                    </div>
+
                     <ChevronDown className={`w-4 h-4 text-brand-muted transition-transform ${isMobileProfileOpen ? 'rotate-180' : ''}`} />
                   </button>
 

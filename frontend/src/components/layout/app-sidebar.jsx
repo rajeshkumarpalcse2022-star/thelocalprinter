@@ -101,13 +101,7 @@ export function AppSidebar({
     >
       {/* Logo */}
       <Link href="/" className="flex h-20 items-center gap-3 border-b border-sidebar-border px-4 hover:bg-sidebar-hover transition-colors">
-        {collapsed ? (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center">
-            <img src="/logo-white.webp" alt="The Local Printer" className="h-8 w-auto" />
-          </div>
-        ) : (
-          <img src="/logo-white.webp" alt="The Local Printer" className="h-11 w-auto" />
-        )}
+        <img src="/favicon.png" alt="The Local Printer" className={cn("shrink-0 object-contain", collapsed ? "h-9 w-9" : "h-9 w-9")} />
       </Link>
 
       {/* Navigation */}
