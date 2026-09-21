@@ -88,16 +88,25 @@ exports.sendOtp = async (req, res) => {
     await otpRecord.save();
 
     if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      console.log(`[DEV MODE] SMTP not configured. OTP for ${normalizedEmail}: ${otp}`);
-      return res.status(200).json({
-        success: true,
-        message: "OTP sent successfully",
-        devOtp: otp,
+      console.error(`[OTP] SMTP credentials missing. Set SMTP_USER and SMTP_PASS in environment variables.`);
+      return res.status(500).json({
+        success: false,
+        message: "Email service not configured. Please contact support.",
       });
     }
 
     console.log(`[OTP] Sending OTP to ${normalizedEmail} via ${process.env.SMTP_HOST}`);
     const transporter = createTransporter();
+    try {
+      await transporter.verify();
+      console.log(`[OTP] SMTP connection verified`);
+    } catch (verifyErr) {
+      console.error(`[OTP] SMTP connection failed:`, verifyErr.message);
+      return res.status(500).json({
+        success: false,
+        message: "Email service connection failed. Please contact support.",
+      });
+    }
     await transporter.sendMail({
       from: `"Local Printer" <${process.env.SMTP_USER}>`,
       to: normalizedEmail,
