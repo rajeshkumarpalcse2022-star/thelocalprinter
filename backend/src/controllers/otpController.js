@@ -1,6 +1,5 @@
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
-const nodemailer = require("nodemailer");
 const { validationResult } = require("express-validator");
 const OtpVerification = require("../models/OtpVerification");
 
@@ -21,17 +20,7 @@ const hashOtp = async (otp) => {
   return bcrypt.hash(otp, salt);
 };
 
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: parseInt(process.env.SMTP_PORT) || 587,
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
-};
+// OTP emails are sent via Resend HTTP API (no SMTP ports needed, works on Render free tier).
 
 exports.sendOtp = async (req, res) => {
   try {
@@ -87,31 +76,26 @@ exports.sendOtp = async (req, res) => {
     });
     await otpRecord.save();
 
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      console.error(`[OTP] SMTP credentials missing. Set SMTP_USER and SMTP_PASS in environment variables.`);
+    if (!process.env.RESEND_API_KEY) {
+      console.error(`[OTP] RESEND_API_KEY missing. Set RESEND_API_KEY in environment variables.`);
       return res.status(500).json({
         success: false,
         message: "Email service not configured. Please contact support.",
       });
     }
 
-    console.log(`[OTP] Sending OTP to ${normalizedEmail} via ${process.env.SMTP_HOST}`);
-    const transporter = createTransporter();
-    try {
-      await transporter.verify();
-      console.log(`[OTP] SMTP connection verified`);
-    } catch (verifyErr) {
-      console.error(`[OTP] SMTP connection failed:`, verifyErr.message);
-      return res.status(500).json({
-        success: false,
-        message: "Email service connection failed. Please contact support.",
-      });
-    }
-    await transporter.sendMail({
-      from: `"Local Printer" <${process.env.SMTP_USER}>`,
-      to: normalizedEmail,
-      subject: "Your Verification Code - Local Printer",
-      html: `
+    console.log(`[OTP] Sending OTP to ${normalizedEmail} via Resend`);
+    const resendRes = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: process.env.OTP_FROM_EMAIL || "Local Printer <onboarding@resend.dev>",
+        to: normalizedEmail,
+        subject: "Your Verification Code - Local Printer",
+        html: `
         <div style="font-family: Arial, sans-serif; max-width: 400px; margin: 0 auto; padding: 20px;">
           <div style="text-align: center; margin-bottom: 20px;">
             <h2 style="color: #f97316; margin: 0;">Local Printer</h2>
@@ -130,7 +114,17 @@ exports.sendOtp = async (req, res) => {
           </div>
         </div>
       `,
+      }),
     });
+
+    if (!resendRes.ok) {
+      const errBody = await resendRes.text();
+      console.error(`[OTP] Resend failed:`, resendRes.status, errBody);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send OTP. Please try again.",
+      });
+    }
 
     console.log(`[OTP] Email sent successfully to ${normalizedEmail}`);
     res.status(200).json({
