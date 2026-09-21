@@ -20,7 +20,7 @@ const hashOtp = async (otp) => {
   return bcrypt.hash(otp, salt);
 };
 
-// OTP emails are sent via Resend HTTP API (no SMTP ports needed, works on Render free tier).
+// OTP emails are sent via Brevo HTTP API (no SMTP ports needed, works on Render free tier).
 
 exports.sendOtp = async (req, res) => {
   try {
@@ -76,26 +76,36 @@ exports.sendOtp = async (req, res) => {
     });
     await otpRecord.save();
 
-    if (!process.env.RESEND_API_KEY) {
-      console.error(`[OTP] RESEND_API_KEY missing. Set RESEND_API_KEY in environment variables.`);
+    if (!process.env.BREVO_API_KEY) {
+      console.error(`[OTP] BREVO_API_KEY missing. Set BREVO_API_KEY in environment variables.`);
       return res.status(500).json({
         success: false,
         message: "Email service not configured. Please contact support.",
       });
     }
 
-    console.log(`[OTP] Sending OTP to ${normalizedEmail} via Resend`);
-    const resendRes = await fetch("https://api.resend.com/emails", {
+    const fromEmail = process.env.OTP_FROM_EMAIL;
+    if (!fromEmail) {
+      console.error(`[OTP] OTP_FROM_EMAIL missing. Set a Brevo-verified sender email.`);
+      return res.status(500).json({
+        success: false,
+        message: "Email service not configured. Please contact support.",
+      });
+    }
+
+    console.log(`[OTP] Sending OTP to ${normalizedEmail} via Brevo`);
+    const brevoRes = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        accept: "application/json",
+        "api-key": process.env.BREVO_API_KEY,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: process.env.OTP_FROM_EMAIL || "Local Printer <onboarding@resend.dev>",
-        to: normalizedEmail,
+        sender: { name: process.env.OTP_FROM_NAME || "Local Printer", email: fromEmail },
+        to: [{ email: normalizedEmail }],
         subject: "Your Verification Code - Local Printer",
-        html: `
+        htmlContent: `
         <div style="font-family: Arial, sans-serif; max-width: 400px; margin: 0 auto; padding: 20px;">
           <div style="text-align: center; margin-bottom: 20px;">
             <h2 style="color: #f97316; margin: 0;">Local Printer</h2>
@@ -117,9 +127,9 @@ exports.sendOtp = async (req, res) => {
       }),
     });
 
-    if (!resendRes.ok) {
-      const errBody = await resendRes.text();
-      console.error(`[OTP] Resend failed:`, resendRes.status, errBody);
+    if (!brevoRes.ok) {
+      const errBody = await brevoRes.text();
+      console.error(`[OTP] Brevo failed:`, brevoRes.status, errBody);
       return res.status(500).json({
         success: false,
         message: "Failed to send OTP. Please try again.",
