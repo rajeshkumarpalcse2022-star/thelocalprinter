@@ -5,19 +5,9 @@ import SearchBar from '../navigation/SearchBar';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import gsap from 'gsap';
 import { usePathname, useRouter } from 'next/navigation'; 
-import { Menu, X, MapPin, Search, Crosshair, Loader2, LogOut, LayoutDashboard, ChevronDown, ChevronRight, Heart } from 'lucide-react';
+import { Menu, X, MapPin, Search, Crosshair, Loader2, LogOut, LayoutDashboard, ChevronDown, ChevronRight, Heart, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { getActiveCategories, getWishlist } from '@/services/userService';
-
-const PAGES = [
-  { name: 'Home', slug: '/' },
-  { name: 'About', slug: '/about' },
-  { name: 'Contact', slug: '/contact' },
-  { name: 'Search Businesses', slug: '/search' },
-  { name: 'Login / Signup', slug: '/login' },
-  { name: 'Privacy Policy', slug: '/privacy-policy' },
-  { name: 'Terms & Conditions', slug: '/terms-and-conditions' },
-];
 
 export default function Header() {
   const headerRef = useRef(null);
@@ -34,6 +24,7 @@ export default function Header() {
   const [mobileSuggestions, setMobileSuggestions] = useState([]);
   const [showMobileSuggestions, setShowMobileSuggestions] = useState(false);
   const [mobileSelectedIndex, setMobileSelectedIndex] = useState(-1);
+  const [mobileNotification, setMobileNotification] = useState('');
   const mobileCategoriesRef = useRef([]);
   const mobileSearchWrapperRef = useRef(null);
   const profileRef = useRef(null);
@@ -126,11 +117,6 @@ export default function Header() {
     if (!text || !text.trim()) return [];
     const q = text.trim().toLowerCase();
     const results = [];
-    PAGES.forEach((page) => {
-      if (page.name.toLowerCase().includes(q)) {
-        results.push({ type: 'PAGE', name: page.name, href: page.slug });
-      }
-    });
     mobileCategoriesRef.current.forEach((cat) => {
       if (cat.name.toLowerCase().includes(q)) {
         results.push({ type: 'CATEGORY', name: cat.name, href: `/categories/${cat.slug}` });
@@ -356,6 +342,13 @@ export default function Header() {
           
           <div className="w-full flex flex-col gap-2.5 p-4 bg-[#F7F8FA] rounded-2xl border border-brand-border">
             
+            {mobileNotification && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-xl text-red-600 text-[12px] font-medium">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                {mobileNotification}
+              </div>
+            )}
+
             <div className="flex items-center bg-white p-2 rounded-xl relative">
               <MapPin className="w-[18px] h-[18px] text-brand-orange shrink-0 ml-1.5 mr-2.5" />
               <input 
@@ -404,7 +397,6 @@ export default function Header() {
                         className={`flex items-center gap-2.5 px-3 py-2.5 cursor-pointer transition-colors ${i === mobileSelectedIndex ? 'bg-brand-orange/5' : 'hover:bg-slate-50'}`}
                       >
                         <div className="flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center bg-slate-100">
-                          {s.type === 'PAGE' && <Search className="w-3.5 h-3.5 text-slate-500" />}
                           {s.type === 'CATEGORY' && <Search className="w-3.5 h-3.5 text-brand-orange" />}
                           {s.type === 'SUBCATEGORY' && <ChevronRight className="w-3.5 h-3.5 text-brand-orange" />}
                         </div>
@@ -414,7 +406,7 @@ export default function Header() {
                             <div className="text-[10px] text-brand-muted truncate">{s.parentName}</div>
                           )}
                         </div>
-                        <span className={`flex-shrink-0 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${s.type === 'PAGE' ? 'bg-slate-100 text-slate-500' : s.type === 'CATEGORY' ? 'bg-brand-orange/10 text-brand-orange' : 'bg-blue-50 text-blue-500'}`}>
+                        <span className={`flex-shrink-0 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${s.type === 'CATEGORY' ? 'bg-brand-orange/10 text-brand-orange' : 'bg-blue-50 text-blue-500'}`}>
                           {s.type}
                         </span>
                       </li>
@@ -433,10 +425,15 @@ export default function Header() {
             <button
               type="button"
               onClick={() => {
+                if (!locationInput.trim() || !searchInput.trim()) {
+                  setMobileNotification('Please fill both location and search field.');
+                  setTimeout(() => setMobileNotification(''), 3000);
+                  return;
+                }
                 setIsMobileMenuOpen(false);
                 const params = new URLSearchParams();
-                if (locationInput.trim()) params.set('location', locationInput.trim());
-                if (searchInput.trim()) params.set('q', searchInput.trim());
+                params.set('location', locationInput.trim());
+                params.set('q', searchInput.trim());
                 router.push(`/search?${params.toString()}`);
               }}
               className="w-full bg-[#EA580C] hover:bg-[#D84A06] text-white py-3 rounded-xl font-bold text-[14px] mt-2 transition-colors shadow-sm active:scale-[0.98]"
