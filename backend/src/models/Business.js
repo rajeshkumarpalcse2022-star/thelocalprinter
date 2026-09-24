@@ -28,9 +28,13 @@ const businessSchema = new mongoose.Schema(
       default: null,
     },
     workingHours: {
-      type: String,
-      trim: true,
-      default: "",
+      monday:    { open: { type: Boolean, default: true },  openingTime: { type: String, default: "" }, closingTime: { type: String, default: "" } },
+      tuesday:   { open: { type: Boolean, default: true },  openingTime: { type: String, default: "" }, closingTime: { type: String, default: "" } },
+      wednesday: { open: { type: Boolean, default: true },  openingTime: { type: String, default: "" }, closingTime: { type: String, default: "" } },
+      thursday:  { open: { type: Boolean, default: true },  openingTime: { type: String, default: "" }, closingTime: { type: String, default: "" } },
+      friday:    { open: { type: Boolean, default: true },  openingTime: { type: String, default: "" }, closingTime: { type: String, default: "" } },
+      saturday:  { open: { type: Boolean, default: true },  openingTime: { type: String, default: "" }, closingTime: { type: String, default: "" } },
+      sunday:    { open: { type: Boolean, default: false }, openingTime: { type: String, default: "" }, closingTime: { type: String, default: "" } },
     },
 
     // ─── Section 2: Contact Details ───
@@ -223,11 +227,11 @@ const businessSchema = new mongoose.Schema(
     },
 
     // ─── Section 16: Fraud / Hotlist (PRIVATE) ───
-    fraudReport: {
+    fraudReport: [{
       contactName: { type: String, trim: true, default: "", select: false },
       designation: { type: String, trim: true, default: "", select: false },
       contactNumber: { type: String, trim: true, default: "", select: false },
-    },
+    }],
 
     // ─── System Fields ───
     status: {

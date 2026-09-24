@@ -228,7 +228,7 @@ exports.createBusiness = async (req, res) => {
       // Section 1
       description: data.description || "",
       establishedYear: data.establishedYear || null,
-      workingHours: data.workingHours || "",
+      workingHours: data.workingHours || {},
 
       // Section 2
       contactName: data.contactName || "",

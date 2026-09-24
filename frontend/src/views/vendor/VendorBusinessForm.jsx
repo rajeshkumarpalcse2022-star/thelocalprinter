@@ -27,6 +27,7 @@ import {
   ClipboardList,
   AlertTriangle,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { createBusiness, getBusinessById, updateBusiness } from "../../services/vendorService";
 import api from "../../services/api";
@@ -90,7 +91,15 @@ const emptyForm = {
   name: "",
   description: "",
   establishedYear: "",
-  workingHours: "",
+  workingHours: {
+    monday:    { open: true,  openingTime: "09:00", closingTime: "19:00" },
+    tuesday:   { open: true,  openingTime: "09:00", closingTime: "19:00" },
+    wednesday: { open: true,  openingTime: "09:00", closingTime: "19:00" },
+    thursday:  { open: true,  openingTime: "09:00", closingTime: "19:00" },
+    friday:    { open: true,  openingTime: "09:00", closingTime: "19:00" },
+    saturday:  { open: true,  openingTime: "10:00", closingTime: "17:00" },
+    sunday:    { open: false, openingTime: "",      closingTime: "" },
+  },
   contactName: "",
   phone: "",
   whatsapp: "",
@@ -124,7 +133,7 @@ const emptyForm = {
   sampleDisplayAvailable: false,
   preferredFileFormats: [],
   acceptsPurchaseOrder: false,
-  fraudReport: { contactName: "", designation: "", contactNumber: "" },
+  fraudReport: [{ contactName: "", designation: "", contactNumber: "" }],
 };
 
 const FormField = ({ label, required, error, children, hint }) => (
@@ -284,7 +293,20 @@ const VendorBusinessForm = () => {
           const b = res.data.business;
           setForm({
             name: b.name || "", description: b.description || "",
-            establishedYear: b.establishedYear || "", workingHours: b.workingHours || "",
+            establishedYear: b.establishedYear || "", workingHours: (() => {
+              if (b.workingHours && typeof b.workingHours === "object" && !Array.isArray(b.workingHours) && b.workingHours.monday) {
+                return {
+                  monday:    { open: b.workingHours.monday?.open ?? true,  openingTime: b.workingHours.monday?.openingTime ?? "", closingTime: b.workingHours.monday?.closingTime ?? "" },
+                  tuesday:   { open: b.workingHours.tuesday?.open ?? true,  openingTime: b.workingHours.tuesday?.openingTime ?? "", closingTime: b.workingHours.tuesday?.closingTime ?? "" },
+                  wednesday: { open: b.workingHours.wednesday?.open ?? true,  openingTime: b.workingHours.wednesday?.openingTime ?? "", closingTime: b.workingHours.wednesday?.closingTime ?? "" },
+                  thursday:  { open: b.workingHours.thursday?.open ?? true,  openingTime: b.workingHours.thursday?.openingTime ?? "", closingTime: b.workingHours.thursday?.closingTime ?? "" },
+                  friday:    { open: b.workingHours.friday?.open ?? true,  openingTime: b.workingHours.friday?.openingTime ?? "", closingTime: b.workingHours.friday?.closingTime ?? "" },
+                  saturday:  { open: b.workingHours.saturday?.open ?? true,  openingTime: b.workingHours.saturday?.openingTime ?? "", closingTime: b.workingHours.saturday?.closingTime ?? "" },
+                  sunday:    { open: b.workingHours.sunday?.open ?? false, openingTime: b.workingHours.sunday?.openingTime ?? "", closingTime: b.workingHours.sunday?.closingTime ?? "" },
+                };
+              }
+              return emptyForm.workingHours;
+            })(),
             contactName: b.contactName || "", phone: b.phone || "", whatsapp: b.whatsapp || "",
             contactEmail: b.contactEmail || "", website: b.website || "",
             category: b.category || "", categoryId: b.categoryId || null,
@@ -304,7 +326,11 @@ const VendorBusinessForm = () => {
             addonServices: b.addonServices || [], sampleDisplayAvailable: b.sampleDisplayAvailable || false,
             preferredFileFormats: b.preferredFileFormats || [],
             acceptsPurchaseOrder: b.acceptsPurchaseOrder || false,
-            fraudReport: b.fraudReport || emptyForm.fraudReport,
+            fraudReport: Array.isArray(b.fraudReport)
+              ? b.fraudReport
+              : b.fraudReport && b.fraudReport.contactName
+                ? [b.fraudReport]
+                : emptyForm.fraudReport,
           });
         } catch (err) {
           setSubmitError(err.response?.data?.message || "Failed to load business");
@@ -593,14 +619,62 @@ const VendorBusinessForm = () => {
             <FormField label="Business Description" hint="Supports AI-assisted description workflow">
               <Textarea value={form.description} onChange={(e) => updateField("description", e.target.value)} placeholder="Describe your business, services, and specialties..." rows={4} />
             </FormField>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormField label="Established Year">
-                <Input type="number" value={form.establishedYear} onChange={(e) => updateField("establishedYear", e.target.value)} placeholder="e.g. 2015" min="1900" max={new Date().getFullYear()} />
-              </FormField>
-              <FormField label="Working Hours">
-                <Input value={form.workingHours} onChange={(e) => updateField("workingHours", e.target.value)} placeholder="e.g. Mon-Sat 9AM-8PM" />
-              </FormField>
-            </div>
+            <FormField label="Established Year">
+              <Input type="number" value={form.establishedYear} onChange={(e) => updateField("establishedYear", e.target.value)} placeholder="e.g. 2015" min="1900" max={new Date().getFullYear()} />
+            </FormField>
+            <FormField label="Working Hours">
+              <div className="space-y-2">
+                {["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((day) => {
+                  const dayData = form.workingHours[day];
+                  const label = day.charAt(0).toUpperCase() + day.slice(1);
+                  return (
+                    <div key={day} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-lg border border-border bg-card">
+                      <div className="flex items-center gap-3 sm:w-[140px] shrink-0">
+                        <Switch
+                          checked={dayData.open}
+                          onCheckedChange={(checked) => {
+                            const updated = { ...form.workingHours, [day]: { ...dayData, open: checked, openingTime: checked ? dayData.openingTime : "", closingTime: checked ? dayData.closingTime : "" } };
+                            updateField("workingHours", updated);
+                          }}
+                        />
+                        <span className="text-sm font-medium text-foreground">{label}</span>
+                      </div>
+                      {dayData.open ? (
+                        <div className="flex items-center gap-2 sm:gap-3 flex-1">
+                          <div className="flex items-center gap-1.5 flex-1 sm:flex-none">
+                            <span className="text-xs text-muted-foreground hidden sm:inline">From</span>
+                            <input
+                              type="time"
+                              value={dayData.openingTime}
+                              onChange={(e) => {
+                                const updated = { ...form.workingHours, [day]: { ...dayData, openingTime: e.target.value } };
+                                updateField("workingHours", updated);
+                              }}
+                              className="flex-1 sm:w-[130px] h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                            />
+                          </div>
+                          <span className="text-muted-foreground text-sm">—</span>
+                          <div className="flex items-center gap-1.5 flex-1 sm:flex-none">
+                            <span className="text-xs text-muted-foreground hidden sm:inline">To</span>
+                            <input
+                              type="time"
+                              value={dayData.closingTime}
+                              onChange={(e) => {
+                                const updated = { ...form.workingHours, [day]: { ...dayData, closingTime: e.target.value } };
+                                updateField("workingHours", updated);
+                              }}
+                              className="flex-1 sm:w-[130px] h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">Closed</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </FormField>
           </div>
         );
 
@@ -715,9 +789,6 @@ const VendorBusinessForm = () => {
                 </FormField>
               );
             })()}
-            <FormField label="Tags" hint="Press Enter to add a tag">
-              <TagInput tags={form.tags} onChange={(val) => updateField("tags", val)} placeholder="e.g. banner, visiting card, brochure" />
-            </FormField>
             <FormField label="Address">
               <Input value={form.address} onChange={(e) => updateField("address", e.target.value)} placeholder="e.g. 123 Main Street, Andheri West" />
             </FormField>
@@ -1261,62 +1332,6 @@ const VendorBusinessForm = () => {
             </div>
             <FormField label="Add-on Services">
               <CheckboxGrid options={[...ADDON_SERVICE_OPTIONS, ...customServices]} selected={form.addonServices} onChange={(val) => updateField("addonServices", val)} columns={3} />
-              <div className="mt-3 space-y-2">
-                <div className="flex gap-2">
-                  <Input
-                    value={newCustomService}
-                    onChange={(e) => setNewCustomService(e.target.value)}
-                    placeholder="Enter your service name..."
-                    className="flex-1"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        const name = newCustomService.trim();
-                        if (name && !ADDON_SERVICE_OPTIONS.includes(name) && !customServices.includes(name)) {
-                          setCustomServices((prev) => [...prev, name]);
-                          setNewCustomService("");
-                        }
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const name = newCustomService.trim();
-                      if (name && !ADDON_SERVICE_OPTIONS.includes(name) && !customServices.includes(name)) {
-                        setCustomServices((prev) => [...prev, name]);
-                        setNewCustomService("");
-                      }
-                    }}
-                    className="gap-1"
-                  >
-                    <Plus size={14} /> Add
-                  </Button>
-                </div>
-                {customServices.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {customServices.map((svc) => (
-                      <span key={svc} className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium">
-                        {svc}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCustomServices((prev) => prev.filter((s) => s !== svc));
-                            if (form.addonServices.includes(svc)) {
-                              updateField("addonServices", form.addonServices.filter((s) => s !== svc));
-                            }
-                          }}
-                          className="hover:opacity-70"
-                        >
-                          <X size={12} />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
             </FormField>
           </div>
         );
@@ -1333,25 +1348,17 @@ const VendorBusinessForm = () => {
             </div>
             <FormField label="Sample / Display Available">
               <div className="flex items-center gap-3">
-                <Switch checked={form.sampleDisplayAvailable} onCheckedChange={(checked) => {
-                  updateField("sampleDisplayAvailable", checked);
-                  if (!checked) updateField("preferredFileFormats", []);
-                }} />
+                <Switch checked={form.sampleDisplayAvailable} onCheckedChange={(checked) => updateField("sampleDisplayAvailable", checked)} />
                 <span className="text-sm text-muted-foreground">{form.sampleDisplayAvailable ? "Yes, we have samples" : "No samples available"}</span>
               </div>
             </FormField>
             <FormField label="Preferred File Formats">
-              <div className={form.sampleDisplayAvailable ? "" : "pointer-events-none opacity-50"}>
-                <CheckboxGrid
-                  options={FILE_FORMAT_OPTIONS}
-                  selected={form.sampleDisplayAvailable ? form.preferredFileFormats : []}
-                  onChange={(val) => updateField("preferredFileFormats", val)}
-                  columns={3}
-                />
-              </div>
-              {!form.sampleDisplayAvailable && (
-                <p className="text-xs text-muted-foreground mt-1.5">Enable Sample / Display Available to select file formats</p>
-              )}
+              <CheckboxGrid
+                options={FILE_FORMAT_OPTIONS}
+                selected={form.preferredFileFormats}
+                onChange={(val) => updateField("preferredFileFormats", val)}
+                columns={3}
+              />
             </FormField>
           </div>
         );
@@ -1393,15 +1400,55 @@ const VendorBusinessForm = () => {
               <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
               <span>This information is strictly private and will never be shown to public users.</span>
             </div>
-            <FormField label="Contact Name">
-              <Input value={form.fraudReport.contactName} onChange={(e) => updateNested("fraudReport", "contactName", e.target.value)} placeholder="Name of the person to report" />
-            </FormField>
-            <FormField label="Designation">
-              <Input value={form.fraudReport.designation} onChange={(e) => updateNested("fraudReport", "designation", e.target.value)} placeholder="e.g. Manager, Owner" />
-            </FormField>
-            <FormField label="Contact Number">
-              <Input value={form.fraudReport.contactNumber} onChange={(e) => updateNested("fraudReport", "contactNumber", e.target.value)} placeholder="e.g. +91 98765 43210" />
-            </FormField>
+            {form.fraudReport.map((entry, idx) => (
+              <div key={idx} className="space-y-3 p-4 rounded-lg border border-border bg-card">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-foreground">Contact {idx + 1}</p>
+                  {form.fraudReport.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = form.fraudReport.filter((_, i) => i !== idx);
+                        updateField("fraudReport", updated);
+                      }}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive hover:text-destructive/80 transition-colors"
+                    >
+                      <Trash2 size={13} />
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <FormField label="Contact Name">
+                  <Input value={entry.contactName} onChange={(e) => {
+                    const updated = [...form.fraudReport];
+                    updated[idx] = { ...updated[idx], contactName: e.target.value };
+                    updateField("fraudReport", updated);
+                  }} placeholder="Name of the person to report" />
+                </FormField>
+                <FormField label="Designation">
+                  <Input value={entry.designation} onChange={(e) => {
+                    const updated = [...form.fraudReport];
+                    updated[idx] = { ...updated[idx], designation: e.target.value };
+                    updateField("fraudReport", updated);
+                  }} placeholder="e.g. Manager, Owner" />
+                </FormField>
+                <FormField label="Contact Number">
+                  <Input value={entry.contactNumber} onChange={(e) => {
+                    const updated = [...form.fraudReport];
+                    updated[idx] = { ...updated[idx], contactNumber: e.target.value };
+                    updateField("fraudReport", updated);
+                  }} placeholder="e.g. +91 98765 43210" />
+                </FormField>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => updateField("fraudReport", [...form.fraudReport, { contactName: "", designation: "", contactNumber: "" }])}
+              className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
+            >
+              <Plus size={16} />
+              Add Another
+            </button>
           </div>
         );
 

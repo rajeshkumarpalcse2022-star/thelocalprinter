@@ -73,8 +73,8 @@ const UserWishlist = () => {
                         onClick={() => router.push(`/user/businesses/${b._id}`)}
                         className="w-16 h-16 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950/30 dark:to-indigo-950/30 flex items-center justify-center text-primary flex-shrink-0 cursor-pointer overflow-hidden"
                       >
-                        {b.verificationMedia?.thumbnailImages?.[0] ? (
-                          <img src={b.verificationMedia.thumbnailImages[0]} alt={b.name} className="w-full h-full object-cover" />
+                        {b.verificationMedia?.outdoorStoreImage || b.verificationMedia?.indoorStoreImage ? (
+                          <img src={b.verificationMedia.outdoorStoreImage || b.verificationMedia.indoorStoreImage} alt={b.name} className="w-full h-full object-cover" />
                         ) : (
                           <Building2 size={24} />
                         )}

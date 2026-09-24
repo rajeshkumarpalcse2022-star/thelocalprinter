@@ -89,3 +89,11 @@ export const getPublicBusinessDetails = async (id) => {
   const response = await api.get(`/user/public/businesses/${id}`);
   return response.data;
 };
+
+export const getLocationAutocomplete = async (query, limit = 5, signal) => {
+  const response = await api.get("/user/public/locations/autocomplete", {
+    params: { q: query, limit },
+    ...(signal ? { signal } : {}),
+  });
+  return response.data;
+};

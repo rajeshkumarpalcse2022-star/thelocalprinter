@@ -5,16 +5,14 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import gsap from 'gsap';
 import {
   SlidersHorizontal,
-  MapPin,
   Search,
   X,
   ChevronDown,
   Loader2,
-  Building2,
   Sun,
   Moon,
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import UserBusinessCard from '@/components/user/UserBusinessCard';
 import { searchPublicBusinesses, getPublicFilterOptions } from '@/services/userService';
 
 const CustomDropdown = ({ value, onChange, options, placeholder = "Select...", minWidth = "min-w-[220px]", align = "left", direction = "down" }) => {
@@ -305,54 +303,11 @@ function SearchContent() {
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {businesses.map((biz) => (
-                  <Card key={biz._id}
-                    className={`cursor-pointer group border-0 shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden rounded-2xl ${isDark ? 'bg-gray-800' : 'bg-white'}`}
-                    onClick={() => router.push(`/businesses/${biz._id}`)}>
-                    <div className="h-44 bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center text-slate-300 relative overflow-hidden">
-                      {biz.verificationMedia?.thumbnailImages?.[0] ? (
-                        <img src={biz.verificationMedia.thumbnailImages[0]} alt={biz.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                      ) : (
-                        <Building2 size={40} strokeWidth={1.5} />
-                      )}
-                      {biz.category && (
-                        <div className="absolute top-3 left-3">
-                          <span className="inline-flex items-center gap-1 bg-white/90 backdrop-blur-sm text-xs font-semibold text-slate-700 px-2.5 py-1 rounded-full shadow-sm">
-                            {biz.categoryId?.image && (
-                              biz.categoryId.image.trim().startsWith('<') ? <span className="h-3.5 w-3.5 [&>svg]:w-3.5 [&>svg]:h-3.5" dangerouslySetInnerHTML={{ __html: biz.categoryId.image }} /> : <img src={biz.categoryId.image} alt="" className="h-3.5 w-3.5 object-contain" />
-                            )}
-                            {biz.category}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <CardContent className="p-4 space-y-2">
-                      <h4 className={`text-[15px] font-bold truncate group-hover:text-[#EA580C] transition-colors ${isDark ? 'text-gray-100' : 'text-slate-900'}`}>{biz.name}</h4>
-                      {biz.city && (
-                        <p className={`flex items-center gap-1 text-xs ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>
-                          <MapPin size={12} className="text-[#EA580C] shrink-0" />
-                          <span className="truncate">{biz.city}{biz.address ? `, ${biz.address}` : ""}</span>
-                        </p>
-                      )}
-                      {biz.serviceIds && biz.serviceIds.length > 0 && (
-                        <div className="flex flex-wrap gap-1 pt-0.5">
-                          {biz.serviceIds.slice(0, 3).map((service) => (
-                            <span key={service._id} className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${isDark ? 'text-gray-300 bg-gray-700' : 'text-slate-600 bg-slate-100'}`}>
-                              {service.name}
-                            </span>
-                          ))}
-                          {biz.serviceIds.length > 3 && (
-                            <span className={`text-[10px] font-medium ${isDark ? 'text-gray-500' : 'text-slate-400'}`}>+{biz.serviceIds.length - 3}</span>
-                          )}
-                        </div>
-                      )}
-                      {biz.description && (
-                        <p className={`text-xs line-clamp-1 pt-0.5 ${isDark ? 'text-gray-500' : 'text-slate-400'}`}>
-                          {biz.description}
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
+                  <UserBusinessCard
+                    key={biz._id}
+                    business={biz}
+                    detailHref={`/businesses/${biz._id}`}
+                  />
                 ))}
               </div>
 

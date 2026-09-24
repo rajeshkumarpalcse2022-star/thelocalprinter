@@ -146,11 +146,11 @@ const Signup = () => {
         if (locationVideo) fd.append("locationVideo", locationVideo);
         if (businessCard) fd.append("businessCard", businessCard);
         const res = await api.post("/auth/signup", fd, { headers: { "Content-Type": "multipart/form-data" } });
-        const { token: t } = res.data.data; localStorage.setItem("token", t); await refreshUser(); router.push("/user/dashboard");
+        const { token: t } = res.data.data; localStorage.setItem("token", t); await refreshUser(); router.push("/user/dashboard/wishlist");
         return;
       }
       await signup(fullName.trim(), email.toLowerCase().trim(), password, "USER", payload);
-      router.push("/user/dashboard");
+      router.push("/user/dashboard/wishlist");
     } catch (err) { setServerError(err.response?.data?.message || "Registration failed. Please try again."); }
     finally { setLoading(false); }
   };

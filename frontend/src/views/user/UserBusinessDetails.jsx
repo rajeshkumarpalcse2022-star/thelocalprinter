@@ -2,10 +2,10 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ArrowLeft, Building2, MapPin, Phone, Clock, Heart, Globe, Mail,
-  MessageCircle, Loader2, CheckCircle, Tag, Languages, CreditCard,
-  FileText, ShoppingBag, Star, Send, Trash2, Edit2, MessageSquare,
-  Camera, Wrench, Users, ShoppingCart, Shield, FileImage, ClipboardList,
+  ArrowLeft, Building2, MapPin, Phone, Clock, Heart, Globe,
+  MessageCircle, Loader2, Languages, CreditCard,
+  FileText, Star, Send, Trash2, Edit2, MessageSquare, Mail, Share2,
+  Camera, Wrench, Shield, FileImage, ClipboardList,
   Package, X, ChevronLeft, ChevronRight, Eye, ExternalLink, Sun, Moon,
 } from "lucide-react";
 import {
@@ -13,26 +13,24 @@ import {
   getBusinessReviews, getMyReview, createReview, updateReview, deleteReview,
 } from "../../services/userService";
 import { PageLoader } from "../../components/shared/page-loader";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 import { Textarea } from "../../components/ui/textarea";
 import { Label } from "../../components/ui/label";
-import { Separator } from "../../components/ui/separator";
 import CopyableId from "../../components/admin/CopyableId";
 import { useAuth } from "../../context/AuthContext";
 
-const Section = ({ title, icon: Icon, children }) => (
-  <Card>
-    <CardHeader className="pb-3">
-      <CardTitle className="text-base flex items-center gap-2">
-        {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
-        {title}
-      </CardTitle>
-    </CardHeader>
-    <CardContent>{children}</CardContent>
-  </Card>
+const ProfileSection = ({ title, icon: Icon, children }) => (
+  <section className="py-7 sm:py-8">
+    <div className="flex items-center gap-2.5 mb-4">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        {Icon && <Icon className="h-4 w-4" />}
+      </span>
+      <h2 className="text-base sm:text-lg font-bold text-foreground">{title}</h2>
+    </div>
+    {children}
+  </section>
 );
 
 const Field = ({ label, value, mono, link }) => {
@@ -229,11 +227,26 @@ const ENUM_LABELS = {
   orderingMethod: { on_call: "On Call", shop_visit: "Shop Visit", both: "Both" },
 };
 
+const WEEK_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
+const fmtTime = (t) => {
+  if (!t || typeof t !== "string" || !t.includes(":")) return "";
+  const [h, m] = t.split(":");
+  const hr = parseInt(h, 10);
+  if (Number.isNaN(hr)) return t;
+  const ampm = hr >= 12 ? "PM" : "AM";
+  const h12 = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr;
+  return `${h12}:${m} ${ampm}`;
+};
+
 const UserBusinessDetails = ({ publicMode = false }) => {
   const { id } = useParams();
   const router = useRouter();
   const { user } = useAuth();
   const isUserRole = !publicMode && user?.role === "USER";
+  // USER-facing privacy: GST + restricted verification media stay hidden for
+  // logged-in USERs and for public (logged-out) visitors alike.
+  const hidePrivate = publicMode || isUserRole;
   const [business, setBusiness] = useState(null);
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -252,6 +265,7 @@ const UserBusinessDetails = ({ publicMode = false }) => {
   const [reviewSuccess, setReviewSuccess] = useState("");
   const [editingReview, setEditingReview] = useState(false);
   const [theme, setTheme] = useState('light');
+  const [shareFeedback, setShareFeedback] = useState("");
 
   useEffect(() => {
     if (publicMode) {
@@ -323,9 +337,96 @@ const UserBusinessDetails = ({ publicMode = false }) => {
     } catch (err) { /* silent */ } finally { setTogglingWishlist(false); }
   };
 
+  const copyShareUrl = async (url) => {
+    try {
+      if (url && typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        return true;
+      }
+      throw new Error("no-clipboard");
+    } catch {
+      // Fallback for older browsers / non-secure contexts (same as CopyableId).
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = url;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+
+  const handleShare = async () => {
+    const shareUrl = typeof window !== "undefined" ? window.location.href : "";
+    const shareData = { title: business?.name || "Business", text: business?.description || "", url: shareUrl };
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        // Mobile / supported browsers: native share sheet (URL included).
+        await navigator.share(shareData);
+        return;
+      }
+      throw new Error("no-share");
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+      // Desktop / unsupported browsers: copy the page URL + show feedback.
+      if (shareUrl && (await copyShareUrl(shareUrl))) {
+        setShareFeedback("Link copied");
+        setTimeout(() => setShareFeedback(""), 2000);
+      }
+    }
+  };
+
   if (loading) return <PageLoader />;
   if (error) return <div className="text-destructive p-6">{error}</div>;
   if (!business) return null;
+
+  const heroImage =
+    business.verificationMedia?.outdoorStoreImage ||
+    business.verificationMedia?.indoorStoreImage ||
+    "";
+  const storeImages = [
+    business.verificationMedia?.outdoorStoreImage
+      ? { url: business.verificationMedia.outdoorStoreImage, label: "Outdoor Store Image" }
+      : null,
+    business.verificationMedia?.indoorStoreImage
+      ? { url: business.verificationMedia.indoorStoreImage, label: "Indoor Store Image" }
+      : null,
+  ].filter(Boolean);
+  const wh = business.workingHours;
+  const hasStructuredHours = wh && typeof wh === "object" && !!wh.monday;
+  const serviceList = Array.isArray(business.serviceIds) ? business.serviceIds : [];
+  const socials = [
+    { key: "facebook", label: "Facebook", url: business.socialMedia?.facebook?.trim(), cls: "text-[#1877F2] border-[#1877F2]/30 hover:bg-[#1877F2]/5" },
+    { key: "instagram", label: "Instagram", url: business.socialMedia?.instagram?.trim(), cls: "text-[#E1306C] border-[#E1306C]/30 hover:bg-[#E1306C]/5" },
+    { key: "youtube", label: "YouTube", url: business.socialMedia?.youtube?.trim(), cls: "text-[#FF0000] border-[#FF0000]/30 hover:bg-[#FF0000]/5" },
+    { key: "linkedin", label: "LinkedIn", url: business.socialMedia?.linkedin?.trim(), cls: "text-[#0A66C2] border-[#0A66C2]/30 hover:bg-[#0A66C2]/5" },
+    { key: "twitter", label: "Twitter", url: business.socialMedia?.twitter?.trim(), cls: "text-[#1D9BF0] border-[#1D9BF0]/30 hover:bg-[#1D9BF0]/5" },
+  ].filter((s) => !!s.url);
+  const lat = business.gpsCoordinates?.lat;
+  const lng = business.gpsCoordinates?.lng;
+  const hasCoords =
+    typeof lat === "number" && typeof lng === "number" &&
+    Number.isFinite(lat) && Number.isFinite(lng);
+  const mapDelta = 0.02;
+  const mapSrc = hasCoords
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${lng - mapDelta}%2C${lat - mapDelta}%2C${lng + mapDelta}%2C${lat + mapDelta}&layer=mapnik&marker=${lat}%2C${lng}`
+    : "";
+  const callDigits = String(business.whatsapp || business.phone || "").replace(/\D/g, "");
+  const hasContact = business.contactName || business.phone || business.whatsapp || business.contactEmail || business.website;
+  const hasCapabilities =
+    business.category || serviceList.length > 0 || business.serviceType ||
+    (business.addonServices?.length || 0) > 0 || (business.tags?.length || 0) > 0;
+  const hasOrderInfo = business.orderLimits || business.customerType || business.orderingMethod;
+  const hasPolicies =
+    business.returnReplacementPolicy || business.inHouseDesignerAvailable || business.customerLocationVisitAvailable;
+  const hasSamples =
+    business.sampleDisplayAvailable || (business.preferredFileFormats?.length || 0) > 0;
 
   const handleSubmitReview = async () => {
     setReviewError(""); setReviewSuccess("");
@@ -357,8 +458,14 @@ const UserBusinessDetails = ({ publicMode = false }) => {
   };
 
   return (
-    <div className="p-4 sm:p-6 pt-16 md:pt-24 max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="relative bg-[#F4F6FA] px-3 pb-4 pt-24 sm:px-4 md:pt-24 dark:bg-transparent">
+      {/* Subtle decorative page backdrop (purely visual, extremely low opacity) */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute inset-x-0 top-0 hidden h-64 bg-gradient-to-b from-slate-200/40 via-transparent to-transparent dark:hidden" />
+        <div className="absolute -top-24 left-1/2 h-72 w-[min(42rem,120vw)] -translate-x-1/2 rounded-full bg-gradient-to-br from-orange-500/10 via-rose-500/5 to-blue-500/10 blur-3xl dark:from-orange-500/[0.14] dark:via-purple-500/10 dark:to-blue-500/[0.14]" />
+      </div>
+      <div className="relative max-w-6xl mx-auto">
+      <div className="flex items-center justify-between pb-2">
         <Button variant="ghost" size="sm" className="gap-1.5 w-fit" onClick={() => router.back()}>
           <ArrowLeft size={16} /> Back
         </Button>
@@ -370,33 +477,48 @@ const UserBusinessDetails = ({ publicMode = false }) => {
         )}
       </div>
 
-      <Card className="overflow-hidden">
-        <div className="h-40 md:h-52 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center text-primary overflow-hidden">
-          {business.verificationMedia?.outdoorStoreImage ? (
-            <img src={business.verificationMedia.outdoorStoreImage} alt={business.name} className="w-full h-full object-cover" />
+      {/* ONE main premium profile template containing the whole business profile */}
+      <article className="overflow-hidden rounded-3xl border border-slate-200/70 bg-white text-card-foreground shadow-xl shadow-slate-900/[0.06] dark:border-border/60 dark:bg-card dark:shadow-black/40">
+        <div className="p-5 sm:p-8 md:p-10">
+      <div className="pb-8">
+        <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950/30 dark:to-indigo-950/30 flex items-center justify-center text-primary h-44 md:h-64">
+          {heroImage ? (
+            <img src={heroImage} alt={business.name} className="w-full h-full object-cover" />
           ) : (
             <Building2 size={48} />
           )}
         </div>
-        <CardContent className="p-6">
-          <div className="flex items-start justify-between gap-4 mb-3 flex-wrap">
-            <div>
-              <h1 className="text-2xl font-extrabold text-foreground">{business.name}</h1>
+        <div className="pt-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl sm:text-2xl font-extrabold text-foreground break-words">{business.name}</h1>
               {business.vendor?.publicId && (
-                <div className="mt-0.5"><CopyableId id={business.vendor.publicId} /></div>
+                <div className="mt-1"><CopyableId id={business.vendor.publicId} /></div>
               )}
-              {business.category && (
-                <div className="flex items-center gap-1.5 mt-1">
-                  {business.categoryId?.image && (business.categoryId.image.trim().startsWith('<') ? <div className="h-4 w-4 [&>svg]:w-4 [&>svg]:h-4" dangerouslySetInnerHTML={{ __html: business.categoryId.image }} /> : <img src={business.categoryId.image} alt="" className="h-4 w-4 object-contain" />)}
-                  <Badge variant="secondary">{business.category}</Badge>
-                </div>
-              )}
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                {business.category && (
+                  <span className="inline-flex items-center gap-1.5">
+                    {business.categoryId?.image && (business.categoryId.image.trim().startsWith('<') ? <span className="h-4 w-4 [&>svg]:w-4 [&>svg]:h-4" dangerouslySetInnerHTML={{ __html: business.categoryId.image }} /> : <img src={business.categoryId.image} alt="" className="h-4 w-4 object-contain" />)}
+                    <Badge variant="secondary">{business.category}</Badge>
+                  </span>
+                )}
+                {reviewSummary.reviewCount > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-foreground">
+                    <Star size={13} className="fill-amber-400 text-amber-400" />
+                    {Number(reviewSummary.averageRating).toFixed(1)}
+                    <span className="font-normal text-muted-foreground">({reviewSummary.reviewCount} reviews)</span>
+                  </span>
+                )}
+                {business.establishedYear && (
+                  <Badge variant="outline" className="text-[11px]">Since {business.establishedYear}</Badge>
+                )}
+              </div>
             </div>
             {!publicMode && (
               <Button
-                variant={isWishlisted ? "destructive" : "outline"}
+                variant="outline"
                 size="sm"
-                className="gap-2"
+                className={`gap-2 shrink-0${isWishlisted ? " bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100 hover:text-rose-700" : ""}`}
                 onClick={handleWishlist}
                 disabled={togglingWishlist}
               >
@@ -406,127 +528,200 @@ const UserBusinessDetails = ({ publicMode = false }) => {
               </Button>
             )}
           </div>
-          {business.city && (
-            <p className="flex items-center gap-1.5 text-sm text-muted-foreground mb-3">
-              <MapPin size={14} /> {business.city}{business.address ? `, ${business.address}` : ""}
+          {(business.city || business.address) && (
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground mt-3">
+              <MapPin size={14} className="shrink-0" />
+              <span className="break-words">{[business.city, business.address].filter(Boolean).join(", ")}</span>
             </p>
           )}
-          {business.description && <p className="text-sm text-muted-foreground leading-relaxed">{business.description}</p>}
-        </CardContent>
-      </Card>
+          {business.contactName && (
+            <p className="text-sm text-muted-foreground mt-1">Contact: <span className="text-foreground font-medium">{business.contactName}</span></p>
+          )}
+          {business.description && <p className="text-sm text-muted-foreground leading-relaxed mt-3">{business.description}</p>}
+          {(business.phone || callDigits || business.contactEmail) && (
+            <div className="flex gap-2 mt-4 flex-wrap">
+              {business.phone && (
+                <a href={`tel:${String(business.phone).replace(/\s/g, "")}`}>
+                  <Button size="sm" className="gap-1.5"><Phone size={14} /> Call Now</Button>
+                </a>
+              )}
+              {callDigits && (
+                <a href={`https://wa.me/${callDigits}`} target="_blank" rel="noopener noreferrer">
+                  <Button size="sm" variant="outline" className="gap-1.5 text-emerald-600 border-emerald-600/30 hover:bg-emerald-600/5 hover:text-emerald-600"><MessageCircle size={14} /> WhatsApp</Button>
+                </a>
+              )}
+              {business.contactEmail && (
+                <a href={`mailto:${business.contactEmail}`}>
+                  <Button size="sm" variant="outline" className="gap-1.5"><Mail size={14} /> Email</Button>
+                </a>
+              )}
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={handleShare}>
+                <Share2 size={14} /> {shareFeedback || "Share"}
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* 1. Business Information */}
-        <Section title="Business Information" icon={Building2}>
-          <div className="space-y-3">
-            <Field label="Business Name" value={business.name} />
-            <Field label="Description" value={business.description} />
-            <Field label="Established Year" value={business.establishedYear?.toString()} />
-            <Field label="Working Hours" value={business.workingHours} />
-          </div>
-        </Section>
+      <div className="divide-y divide-border border-t border-border">
+        {/* Working Hours — structured Mon–Sun */}
+        {hasStructuredHours && (
+          <ProfileSection title="Working Hours" icon={Clock}>
+            <ul className="divide-y divide-border max-w-xl">
+              {WEEK_DAYS.map((d) => {
+                const day = wh[d] || {};
+                const label = d.charAt(0).toUpperCase() + d.slice(1);
+                const open = !!day.open;
+                const range = open && (day.openingTime || day.closingTime)
+                  ? `${fmtTime(day.openingTime)} – ${fmtTime(day.closingTime)}`
+                  : "";
+                return (
+                  <li key={d} className="flex items-center justify-between gap-3 py-2">
+                    <span className="text-sm font-medium text-foreground">{label}</span>
+                    {open ? (
+                      <span className="text-sm text-muted-foreground">{range || "Open"}</span>
+                    ) : (
+                      <Badge variant="secondary" className="text-[11px]">Closed</Badge>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </ProfileSection>
+        )}
 
-        {/* 2. Contact Details */}
-        <Section title="Contact Details" icon={Phone}>
-          <div className="space-y-3">
-            <Field label="Contact Name" value={business.contactName} />
-            <Field label="Phone" value={business.phone} mono />
-            <Field label="WhatsApp" value={business.whatsapp} mono />
-            <Field label="Email" value={business.contactEmail} />
-            <Field label="Website" value={business.website} link />
-          </div>
-        </Section>
+        {/* Contact Details — only when data exists */}
+        {hasContact && (
+          <ProfileSection title="Contact Details" icon={Phone}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {business.contactName && <Field label="Contact Name" value={business.contactName} />}
+              {business.phone && <Field label="Phone" value={business.phone} mono />}
+              {business.whatsapp && <Field label="WhatsApp" value={business.whatsapp} mono />}
+              {business.contactEmail && <Field label="Email" value={business.contactEmail} />}
+              {business.website && <Field label="Website" value={business.website} link />}
+            </div>
+          </ProfileSection>
+        )}
 
-        {/* 3. Category & Location */}
-        <Section title="Category & Location" icon={MapPin}>
-          <div className="space-y-3">
-            <div>
-              <Field label="Category" value={business.categoryId?.name || business.category} />
-              {business.categoryId?.image && (
-                business.categoryId.image.trim().startsWith('<') ? <div className="h-8 w-8 [&>svg]:w-8 [&>svg]:h-8" dangerouslySetInnerHTML={{ __html: business.categoryId.image }} /> : <img src={business.categoryId.image} alt="" className="h-8 w-8 object-contain mt-1" />
+        {/* Services & Capabilities */}
+        {hasCapabilities && (
+          <ProfileSection title="Services & Capabilities" icon={Wrench}>
+            <div className="space-y-3">
+              {(business.categoryId?.name || business.category) && (
+                <Field label="Category" value={business.categoryId?.name || business.category} />
+              )}
+              {serviceList.length > 0 && (
+                <ArrayField label="Services" value={serviceList.map((s) => s.name || s)} />
+              )}
+              {business.serviceType && (
+                <Field label="Service Type" value={ENUM_LABELS.serviceType[business.serviceType] || business.serviceType} />
+              )}
+              {(business.addonServices?.length || 0) > 0 && (
+                <ArrayField label="Add-on Services" value={business.addonServices} />
+              )}
+              {(business.tags?.length || 0) > 0 && (
+                <ArrayField label="Tags" value={business.tags} />
               )}
             </div>
-            {business.serviceIds && business.serviceIds.length > 0 && (
-              <ArrayField
-                label="Services"
-                value={business.serviceIds.map((s) => s.name || s)}
-              />
-            )}
-            <ArrayField label="Tags" value={business.tags} />
-            <Field label="Full Address" value={business.address} />
-            <Field label="City" value={business.city} />
-            {business.gpsCoordinates?.lat != null && business.gpsCoordinates?.lng != null && (
-              <Field label="GPS Coordinates" value={`${business.gpsCoordinates.lat}, ${business.gpsCoordinates.lng}`} mono />
-            )}
-          </div>
-        </Section>
+          </ProfileSection>
+        )}
 
-        {/* 4. GST */}
-        {!isUserRole && (
-          <Section title="GST" icon={FileText}>
+        {/* 4. GST — never rendered in USER-facing views (incl. public) */}
+        {!hidePrivate && (
+          <ProfileSection title="GST" icon={FileText}>
             <div className="space-y-3">
               <BoolField label="GST Available" value={business.gstAvailable} />
             </div>
-          </Section>
+          </ProfileSection>
         )}
 
-        {/* 5. Order Limits */}
-        <Section title="Order Limits" icon={Package}>
-          <div className="space-y-3">
-            <Field label="Order Limits" value={ENUM_LABELS.orderLimits[business.orderLimits]} />
-          </div>
-        </Section>
+        {/* Orders */}
+        {hasOrderInfo && (
+          <ProfileSection title="Orders" icon={Package}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {business.orderLimits && (
+                <Field label="Orders Limit" value={ENUM_LABELS.orderLimits[business.orderLimits] || business.orderLimits} />
+              )}
+              {business.customerType && (
+                <Field label="Deals With" value={ENUM_LABELS.customerType[business.customerType] || business.customerType} />
+              )}
+              {business.orderingMethod && (
+                <Field label="To Order" value={ENUM_LABELS.orderingMethod[business.orderingMethod] || business.orderingMethod} />
+              )}
+            </div>
+          </ProfileSection>
+        )}
 
-        {/* 6. Services */}
-        <Section title="Services" icon={Wrench}>
-          <div className="space-y-3">
-            <Field label="Service Type" value={ENUM_LABELS.serviceType[business.serviceType]} />
-            <ArrayField label="Add-on Services" value={business.addonServices} />
-          </div>
-        </Section>
+        {/* Mode of Payments */}
+        {(business.paymentModes?.length || 0) > 0 && (
+          <ProfileSection title="Mode of Payments" icon={CreditCard}>
+            <ArrayField label="Payment Methods" value={business.paymentModes} />
+          </ProfileSection>
+        )}
 
-        {/* 7. Customer Type */}
-        <Section title="Customer Type" icon={Users}>
-          <div className="space-y-3">
-            <Field label="Customer Type" value={ENUM_LABELS.customerType[business.customerType]} />
-          </div>
-        </Section>
+        {/* Social Media — buttons only for saved URLs */}
+        {socials.length > 0 && (
+          <ProfileSection title="Social Media" icon={Globe}>
+            <div className="flex flex-wrap gap-2">
+              {socials.map((s) => (
+                <a
+                  key={s.key}
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-semibold transition-colors min-h-[40px] ${s.cls}`}
+                >
+                  {s.label}
+                  <ExternalLink size={13} />
+                </a>
+              ))}
+            </div>
+          </ProfileSection>
+        )}
 
-        {/* 8. Ordering Method */}
-        <Section title="Ordering Method" icon={ShoppingCart}>
-          <div className="space-y-3">
-            <Field label="Ordering Method" value={ENUM_LABELS.orderingMethod[business.orderingMethod]} />
-          </div>
-        </Section>
+        {/* Location & Map — business's stored GPS coordinates */}
+        {(business.address || business.city || hasCoords) && (
+          <ProfileSection title="Location" icon={MapPin}>
+            <div className="space-y-3">
+              {business.address && <Field label="Full Address" value={business.address} />}
+              {business.city && <Field label="City" value={business.city} />}
+              {hasCoords ? (
+                <div className="space-y-2">
+                  <div className="rounded-xl overflow-hidden border">
+                    <iframe
+                      title={`Map of ${business.name}`}
+                      src={mapSrc}
+                      className="w-full aspect-video"
+                      loading="lazy"
+                    />
+                  </div>
+                  <a
+                    href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=15/${lat}/${lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[13px] font-medium text-primary hover:underline"
+                  >
+                    Open in Maps <ExternalLink size={13} />
+                  </a>
+                </div>
+              ) : (
+                (business.address || business.city) && (
+                  <p className="text-xs text-muted-foreground italic">Map not available for this location.</p>
+                )
+              )}
+            </div>
+          </ProfileSection>
+        )}
 
-        {/* 9. Payment Modes */}
-        <Section title="Payment Modes" icon={CreditCard}>
-          <ArrayField label="Payment Methods" value={business.paymentModes} />
-        </Section>
-
-        {/* 10. Social Media */}
-        <Section title="Social Media" icon={Globe}>
-          <div className="space-y-3">
-            <Field label="Facebook" value={business.socialMedia?.facebook} link />
-            <Field label="Instagram" value={business.socialMedia?.instagram} link />
-            <Field label="YouTube" value={business.socialMedia?.youtube} link />
-            <Field label="LinkedIn" value={business.socialMedia?.linkedin} link />
-            <Field label="Twitter" value={business.socialMedia?.twitter} link />
-          </div>
-        </Section>
-
-        {/* 11. Verification Media */}
-        {(!isUserRole || business.verificationMedia?.outdoorStoreImage || business.verificationMedia?.indoorStoreImage) && (
-          <Section title="Verification Media" icon={Camera}>
+        {/* 11. Store Photos — outdoor/indoor only in USER-facing views */}
+        {(!hidePrivate || storeImages.length > 0) && (
+          <ProfileSection title="Store Photos" icon={Camera}>
             <div className="space-y-6">
-              {isUserRole ? (
+              {hidePrivate ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  {business.verificationMedia?.outdoorStoreImage && (
-                    <ImageViewer url={business.verificationMedia.outdoorStoreImage} label="Outdoor Store Image" />
-                  )}
-                  {business.verificationMedia?.indoorStoreImage && (
-                    <ImageViewer url={business.verificationMedia.indoorStoreImage} label="Indoor Store Image" />
-                  )}
+                  {storeImages.map((img) => (
+                    <ImageViewer key={img.label} url={img.url} label={img.label} />
+                  ))}
                 </div>
               ) : (
                 <>
@@ -542,48 +737,71 @@ const UserBusinessDetails = ({ publicMode = false }) => {
                 </>
               )}
             </div>
-          </Section>
+          </ProfileSection>
         )}
 
         {/* 12. Languages */}
-        <Section title="Communication Languages" icon={Languages}>
-          <ArrayField label="Languages" value={business.languages} />
-        </Section>
+        {(business.languages?.length || 0) > 0 && (
+          <ProfileSection title="Communication Languages" icon={Languages}>
+            <ArrayField label="Languages" value={business.languages} />
+          </ProfileSection>
+        )}
 
         {/* 13. Policies & Additional Services */}
-        <Section title="Policies & Additional Services" icon={Shield}>
-          <div className="space-y-3">
-            <Field label="Return / Replacement Policy" value={business.returnReplacementPolicy} />
-            <BoolField label="In-house Designer Available" value={business.inHouseDesignerAvailable} />
-            <BoolField label="Customer Location Visit Available" value={business.customerLocationVisitAvailable} />
-          </div>
-        </Section>
+        {hasPolicies && (
+          <ProfileSection title="Policies & Additional Services" icon={Shield}>
+            <div className="space-y-3">
+              {business.returnReplacementPolicy && (
+                <Field label="Return / Replacement Policy" value={business.returnReplacementPolicy} />
+              )}
+              {business.inHouseDesignerAvailable && (
+                <BoolField label="In-house Designer Available" value={business.inHouseDesignerAvailable} />
+              )}
+              {business.customerLocationVisitAvailable && (
+                <BoolField label="Customer Location Visit Available" value={business.customerLocationVisitAvailable} />
+              )}
+            </div>
+          </ProfileSection>
+        )}
 
         {/* 14. Sample / Display & File Formats */}
-        <Section title="Sample / Display & File Formats" icon={FileImage}>
-          <div className="space-y-3">
-            <BoolField label="Sample/Display Available" value={business.sampleDisplayAvailable} />
-            <ArrayField label="Preferred File Formats" value={business.preferredFileFormats} />
-          </div>
-        </Section>
+        {hasSamples && (
+          <ProfileSection title="Sample / Display & File Formats" icon={FileImage}>
+            <div className="space-y-3">
+              {business.sampleDisplayAvailable && (
+                <BoolField label="Sample/Display Available" value={business.sampleDisplayAvailable} />
+              )}
+              {(business.preferredFileFormats?.length || 0) > 0 && (
+                <ArrayField label="Preferred File Formats" value={business.preferredFileFormats} />
+              )}
+            </div>
+          </ProfileSection>
+        )}
 
         {/* 15. Purchase Order */}
-        <Section title="Purchase Order" icon={ClipboardList}>
-          <BoolField label="Accepts Orders Without Advance (After Verification)" value={business.acceptsPurchaseOrder} />
-        </Section>
+        {business.acceptsPurchaseOrder && (
+          <ProfileSection title="Purchase Order" icon={ClipboardList}>
+            <BoolField label="Accepts Orders Without Advance (After Verification)" value={business.acceptsPurchaseOrder} />
+          </ProfileSection>
+        )}
       </div>
 
       {!publicMode && (
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Customer Reviews</CardTitle>
+      <section className="py-7 sm:py-8">
+        <div className="flex flex-row items-center justify-between mb-4 gap-2 flex-wrap">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <MessageSquare className="h-4 w-4" />
+            </span>
+            <h2 className="text-base sm:text-lg font-bold text-foreground">Customer Reviews</h2>
+          </div>
           {!myReview && (
             <Button size="sm" className="gap-1.5" onClick={() => { setShowReviewForm(!showReviewForm); setEditingReview(false); setReviewComment(""); setReviewRating(0); }}>
               <MessageSquare size={14} /> Write a Review
             </Button>
           )}
-        </CardHeader>
-        <CardContent className="space-y-4">
+        </div>
+        <div className="space-y-4">
           <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 items-start">
             <div className="text-center min-w-[100px]">
               <p className="text-4xl font-extrabold text-foreground">{reviewSummary.averageRating}</p>
@@ -673,9 +891,12 @@ const UserBusinessDetails = ({ publicMode = false }) => {
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
       )}
+        </div>
+      </article>
+      </div>
     </div>
   );
 };

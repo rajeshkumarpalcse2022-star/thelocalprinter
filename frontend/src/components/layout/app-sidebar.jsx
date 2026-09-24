@@ -25,11 +25,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 const navItemsByRole = {
   user: [
-    { to: "/user/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-    { to: "/user/wishlist", icon: Heart, label: "Wishlist" },
-    { to: "/user/chat", icon: MessageCircle, label: "Chat", showChatBadge: true },
-    { to: "/user/package", icon: Package, label: "My Package" },
-    { to: "/user/profile", icon: UserCircle, label: "Profile" },
+    { to: "/user/dashboard/wishlist", icon: Heart, label: "Wishlist" },
+    { to: "/user/dashboard/chat", icon: MessageCircle, label: "Chat", showChatBadge: true },
+    { to: "/user/dashboard/my-package", icon: Package, label: "My Package" },
+    { to: "/user/dashboard/profile", icon: UserCircle, label: "Profile" },
   ],
   vendorFull: [
     { to: "/vendor/dashboard", icon: LayoutDashboard, label: "Dashboard" },

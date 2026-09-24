@@ -5,6 +5,7 @@ const {
   getPublicBusinesses,
   getBusinessById,
   getFilterOptions,
+  getLocationAutocomplete,
   getWishlist,
   addToWishlist,
   removeFromWishlist,
@@ -43,6 +44,7 @@ router.get("/package", authenticateUser, authorizeRole("USER"), getPackage);
 
 const Category = require("../models/Category");
 
+router.get("/public/locations/autocomplete", getLocationAutocomplete);
 router.get("/public/businesses", getPublicBusinesses);
 router.get("/public/businesses/filters", getFilterOptions);
 router.get("/public/businesses/:id", getBusinessById);

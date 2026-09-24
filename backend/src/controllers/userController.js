@@ -19,7 +19,7 @@ exports.getDashboard = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(6)
       .populate("vendor", "publicId")
-      .select("name category city description workingHours serviceType tags vendor");
+      .select("name category city description workingHours serviceType tags vendor contactName verificationMedia.outdoorStoreImage verificationMedia.indoorStoreImage");
 
     const popularCategories = categories.slice(0, 8);
 
@@ -64,14 +64,32 @@ exports.getPublicBusinesses = async (req, res) => {
 
     const query = { status: "approved", isActive: true };
 
+    // Escape user text used inside $regex so characters like ( ) [ ] + *
+    // cannot change the pattern meaning or break the query.
+    const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
     if (search) {
+      const safeSearch = escapeRegex(search);
       const orConditions = [
-        { name: { $regex: search, $options: "i" } },
-        { city: { $regex: search, $options: "i" } },
-        { address: { $regex: search, $options: "i" } },
+        { name: { $regex: safeSearch, $options: "i" } },
+        { city: { $regex: safeSearch, $options: "i" } },
+        { address: { $regex: safeSearch, $options: "i" } },
+        { category: { $regex: safeSearch, $options: "i" } },
       ];
+      // Header search sends category/subcategory display names as free text
+      // (e.g. "3D Printing"). Resolve them to category references so
+      // businesses filed under that category/subcategory also match.
+      const matchedCats = await Category.find({
+        name: { $regex: safeSearch, $options: "i" },
+        isActive: true,
+      }).select("_id");
+      if (matchedCats.length > 0) {
+        const catIds = matchedCats.map((c) => c._id);
+        orConditions.push({ categoryId: { $in: catIds } });
+        orConditions.push({ serviceIds: { $in: catIds } });
+      }
       if (/^VND-/i.test(search)) {
-        const vendor = await User.findOne({ publicId: { $regex: search, $options: "i" } }).select("_id");
+        const vendor = await User.findOne({ publicId: { $regex: safeSearch, $options: "i" } }).select("_id");
         if (vendor) orConditions.push({ vendor: vendor._id });
       }
       query.$or = orConditions;
@@ -83,7 +101,13 @@ exports.getPublicBusinesses = async (req, res) => {
     } else if (category) {
       query.category = { $regex: category, $options: "i" };
     }
-    if (city) query.city = { $regex: city, $options: "i" };
+    // The location field carries a display string like "Mandirbazar, West Bengal"
+    // while businesses store only the city ("Mandirbazar"). Match on the city
+    // token (text before the first comma) so display strings still match.
+    if (city) {
+      const cityToken = (String(city).split(",")[0] || "").trim() || String(city).trim();
+      query.city = { $regex: escapeRegex(cityToken), $options: "i" };
+    }
     if (serviceType) query.serviceType = serviceType;
     if (customerType) query.customerType = customerType;
     if (orderingMethod) query.orderingMethod = orderingMethod;
@@ -118,7 +142,7 @@ exports.getPublicBusinesses = async (req, res) => {
         .populate("serviceIds", "name slug")
         .populate("vendor", "publicId")
         .select(
-          "name description category categoryId serviceIds city address serviceType customerType orderingMethod orderLimits tags workingHours languages verificationMedia.thumbnailImages vendor gpsCoordinates"
+          "name description category categoryId serviceIds city address serviceType customerType orderingMethod orderLimits tags workingHours languages verificationMedia.thumbnailImages verificationMedia.outdoorStoreImage verificationMedia.indoorStoreImage contactName vendor gpsCoordinates"
         );
     } else {
       const [businesses, total] = await Promise.all([
@@ -130,7 +154,7 @@ exports.getPublicBusinesses = async (req, res) => {
           .populate("serviceIds", "name slug")
           .populate("vendor", "publicId")
           .select(
-            "name description category categoryId serviceIds city address serviceType customerType orderingMethod orderLimits tags workingHours languages verificationMedia.thumbnailImages vendor gpsCoordinates"
+            "name description category categoryId serviceIds city address serviceType customerType orderingMethod orderLimits tags workingHours languages verificationMedia.thumbnailImages verificationMedia.outdoorStoreImage verificationMedia.indoorStoreImage contactName vendor gpsCoordinates"
           ),
         Business.countDocuments(query),
       ]);
@@ -273,8 +297,76 @@ exports.getBusinessById = async (req, res) => {
   }
 };
 
-exports.getFilterOptions = async (req, res) => {
+// GET /api/user/public/locations/autocomplete?q=&limit=
+// Server-side proxy to OpenStreetMap Nominatim search so no key/secret
+// is exposed in client code and suggestions are NOT limited to DB cities.
+const locationCache = new Map(); // key -> { expires, data }
+exports.getLocationAutocomplete = async (req, res) => {
   try {
+    const q = (req.query.q || "").trim();
+    let limit = parseInt(req.query.limit, 10) || 5;
+    if (limit < 1) limit = 1;
+    if (limit > 8) limit = 8;
+    if (!q) {
+      return res.status(200).json({ success: true, data: { locations: [] } });
+    }
+
+    const cacheKey = `${q.toLowerCase()}|${limit}`;
+    const cached = locationCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return res.status(200).json({ success: true, data: { locations: cached.data } });
+    }
+
+    const url =
+      `https://nominatim.openstreetmap.org/search?format=jsonv2` +
+      `&q=${encodeURIComponent(q)}` +
+      `&countrycodes=in&limit=${limit}&addressdetails=1&accept-language=en`;
+
+    const upstream = await fetch(url, {
+      headers: {
+        "User-Agent": "thelocalprinter/1.0 (location-autocomplete)",
+        Accept: "application/json",
+      },
+    });
+    if (!upstream.ok) {
+      return res.status(200).json({ success: true, data: { locations: [] } });
+    }
+    const raw = await upstream.json();
+
+    const locations = (Array.isArray(raw) ? raw : []).slice(0, limit).map((item) => {
+      const addr = item.address || {};
+      const city =
+        addr.city || addr.town || addr.village || addr.hamlet ||
+        addr.suburb || addr.county || addr.state_district || item.name || "";
+      const state = addr.state || "";
+      const country = addr.country || "";
+      const displayName = [city, state].filter(Boolean).join(", ") ||
+        (item.display_name || "").split(",").slice(0, 2).join(",").trim() ||
+        item.display_name || q;
+      return {
+        placeId: String(item.place_id ?? item.osm_id ?? displayName),
+        displayName,
+        city,
+        state,
+        country,
+        lat: item.lat !== undefined ? parseFloat(item.lat) : null,
+        lon: item.lon !== undefined ? parseFloat(item.lon) : null,
+      };
+    });
+
+    locationCache.set(cacheKey, { expires: Date.now() + 10 * 60 * 1000, data: locations });
+    if (locationCache.size > 200) {
+      const firstKey = locationCache.keys().next().value;
+      locationCache.delete(firstKey);
+    }
+
+    return res.status(200).json({ success: true, data: { locations } });
+  } catch (error) {
+    return res.status(200).json({ success: true, data: { locations: [] } });
+  }
+};
+
+exports.getFilterOptions = async (req, res) => {  try {
     const [activeParentCategories, cities] = await Promise.all([
       Category.find({ isActive: true, type: "parent" }).sort({ name: 1 }).select("name slug image"),
       Business.distinct("city", { status: "approved", isActive: true, city: { $ne: "" } }),
@@ -354,7 +446,7 @@ exports.getWishlist = async (req, res) => {
         .limit(limit)
         .populate({
           path: "business",
-          select: "name category city description serviceType isActive status verificationMedia.thumbnailImages vendor",
+          select: "name category city description serviceType isActive status verificationMedia.thumbnailImages verificationMedia.outdoorStoreImage verificationMedia.indoorStoreImage contactName vendor",
           match: { isActive: true },
           populate: { path: "vendor", select: "publicId" },
         }),

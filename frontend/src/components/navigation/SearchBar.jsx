@@ -1,9 +1,12 @@
 'use client';
 
-import { MapPin, Search, ChevronRight, AlertCircle } from 'lucide-react';
+import { MapPin, Search, ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { getActiveCategories, getPublicFilterOptions } from '@/services/userService';
+import { getActiveCategories, getPublicFilterOptions, getLocationAutocomplete } from '@/services/userService';
+
+const LOCATION_DEBOUNCE_MS = 300;
+const LOCATION_LIMIT = 5;
 
 export default function SearchBar() {
   const router = useRouter();
@@ -23,7 +26,15 @@ export default function SearchBar() {
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const [locationSelectedIndex, setLocationSelectedIndex] = useState(-1);
+  const [isLocationLoading, setIsLocationLoading] = useState(false);
   const locationSuggestionsRef = useRef(null);
+  // Structured info for the selected location (display string is still what
+  // the existing search contract uses). Kept in a ref so selecting a
+  // suggestion never triggers navigation/search by itself.
+  const locationMetaRef = useRef(null);
+  const locationDebounceRef = useRef(null);
+  const locationAbortRef = useRef(null);
+  const locationRequestIdRef = useRef(0);
 
   useEffect(() => {
     getActiveCategories()
@@ -58,7 +69,13 @@ export default function SearchBar() {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
         setShowSuggestions(false);
       }
-      if (locationWrapperRef.current && !locationWrapperRef.current.contains(e.target)) {
+      // The location dropdown is rendered outside locationWrapperRef, so a
+      // mousedown on a suggestion must NOT count as outside — otherwise the
+      // dropdown unmounts before the suggestion's click event can fire and
+      // the location field never gets populated.
+      const inLocationInput = locationWrapperRef.current?.contains(e.target);
+      const inLocationList = locationSuggestionsRef.current?.contains(e.target);
+      if (!inLocationInput && !inLocationList) {
         setShowLocationSuggestions(false);
       }
     };
@@ -80,36 +97,77 @@ export default function SearchBar() {
     setShowSuggestions(results.length > 0);
   };
 
-  const computeLocationSuggestions = useCallback((text) => {
-    if (!text || !text.trim()) return [];
+  // DB cities are only a graceful offline fallback — primary source is the
+  // server-side location autocomplete (real places, not just DB cities).
+  const computeDbLocationFallback = useCallback((text) => {
     const q = text.trim().toLowerCase();
+    if (!q) return [];
     return citiesRef.current
       .filter((city) => city.toLowerCase().includes(q))
-      .slice(0, 8);
+      .slice(0, LOCATION_LIMIT)
+      .map((city) => ({ placeId: `db-${city}`, displayName: city, city, state: '', country: '', lat: null, lon: null }));
+  }, []);
+
+  const fetchLocationSuggestions = useCallback((text) => {
+    const query = (text || '').trim();
+    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
+    if (locationAbortRef.current) locationAbortRef.current.abort();
+    if (!query) {
+      setLocationSuggestions([]);
+      setShowLocationSuggestions(false);
+      setIsLocationLoading(false);
+      return;
+    }
+    setIsLocationLoading(true);
+    setShowLocationSuggestions(true);
+    const requestId = ++locationRequestIdRef.current;
+    locationDebounceRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      locationAbortRef.current = controller;
+      try {
+        const res = await getLocationAutocomplete(query, LOCATION_LIMIT, controller.signal);
+        if (locationRequestIdRef.current !== requestId) return; // stale response
+        const list = (res?.data?.locations || []).slice(0, LOCATION_LIMIT);
+        setLocationSuggestions(list);
+        setLocationSelectedIndex(-1);
+      } catch (err) {
+        if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError' || err?.name === 'AbortError') return;
+        if (locationRequestIdRef.current !== requestId) return;
+        // Graceful fallback: keep typed text, show DB cities if any.
+        setLocationSuggestions(computeDbLocationFallback(query));
+        setLocationSelectedIndex(-1);
+      } finally {
+        if (locationRequestIdRef.current === requestId) setIsLocationLoading(false);
+      }
+    }, LOCATION_DEBOUNCE_MS);
+  }, [computeDbLocationFallback]);
+
+  useEffect(() => () => {
+    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
+    if (locationAbortRef.current) locationAbortRef.current.abort();
   }, []);
 
   const handleLocationChange = (e) => {
     const val = e.target.value;
     setLocation(val);
+    locationMetaRef.current = null;
     setLocationSelectedIndex(-1);
-    if (!val.trim()) {
-      setLocationSuggestions([]);
-      setShowLocationSuggestions(false);
-      return;
-    }
-    const results = computeLocationSuggestions(val);
-    setLocationSuggestions(results);
-    setShowLocationSuggestions(results.length > 0);
+    fetchLocationSuggestions(val);
   };
 
-  const handleLocationSuggestionClick = (city) => {
-    setLocation(city);
+  const handleLocationSuggestionClick = (suggestion) => {
+    if (!suggestion) return;
+    // ONLY populate the LEFT location field — no navigation, no search.
+    setLocation(suggestion.displayName);
+    locationMetaRef.current = suggestion;
     setShowLocationSuggestions(false);
     setLocationSuggestions([]);
+    setLocationSelectedIndex(-1);
+    setIsLocationLoading(false);
   };
 
   const handleLocationKeyDown = (e) => {
-    if (!showLocationSuggestions || locationSuggestions.length === 0) {
+    if (!showLocationSuggestions || (locationSuggestions.length === 0 && !isLocationLoading)) {
       if (e.key === 'Escape') setShowLocationSuggestions(false);
       return;
     }
@@ -129,10 +187,10 @@ export default function SearchBar() {
   };
 
   const handleSuggestionClick = (suggestion) => {
-    setQuery('');
+    setQuery(suggestion.name);
     setShowSuggestions(false);
     setSuggestions([]);
-    router.push(suggestion.href);
+    setSelectedIndex(-1);
   };
 
   const handleQueryKeyDown = (e) => {
@@ -215,7 +273,7 @@ export default function SearchBar() {
       <form onSubmit={handleSearch} className="flex items-center bg-white rounded-full border border-brand-border h-[52px] w-full shadow-sm hover:shadow-md transition-shadow focus-within:ring-2 focus-within:ring-brand-orange/30 focus-within:border-brand-orange overflow-hidden pl-2 pr-1.5">
         <div ref={locationWrapperRef} className="relative flex items-center flex-1 h-full pl-3 bg-transparent pr-1">
           <MapPin className={`w-5 h-5 shrink-0 ${isLocating ? 'text-brand-orange animate-pulse' : 'text-brand-muted'}`} />
-          <input type="text" placeholder={isLocating ? "Detecting..." : "Enter location..."} value={location} onChange={handleLocationChange} onKeyDown={handleLocationKeyDown} onFocus={() => { if (location.trim()) { const r = computeLocationSuggestions(location); setLocationSuggestions(r); setShowLocationSuggestions(r.length > 0); } }} className="w-full h-full px-3 text-[15px] text-brand-darkText border-none focus:ring-0 focus:outline-none bg-transparent placeholder:text-brand-muted" />
+          <input type="text" placeholder={isLocating ? "Detecting..." : "Enter location..."} value={location} onChange={handleLocationChange} onKeyDown={handleLocationKeyDown} onFocus={() => { if (location.trim()) fetchLocationSuggestions(location); }} autoComplete="off" className="w-full h-full px-3 text-[15px] text-brand-darkText border-none focus:ring-0 focus:outline-none bg-transparent placeholder:text-brand-muted" />
         </div>
         <div className="h-7 w-[1px] bg-brand-border shrink-0 mx-1 md:mx-2"></div>
         <div className="flex items-center flex-[1.5] h-full bg-transparent">
@@ -223,7 +281,7 @@ export default function SearchBar() {
           <input
             ref={inputRef}
             type="text"
-            placeholder="Business name, tag or category..."
+            placeholder="Search category or subcategory..."
             value={query}
             onChange={handleQueryChange}
             onKeyDown={handleQueryKeyDown}
@@ -237,22 +295,36 @@ export default function SearchBar() {
         </div>
       </form>
 
-      {showLocationSuggestions && locationSuggestions.length > 0 && (
-        <div className="absolute left-0 right-0 top-[52px] mt-1 bg-white rounded-2xl border border-brand-border shadow-lg z-50 overflow-hidden max-h-[280px] overflow-y-auto">
-          <ul ref={locationSuggestionsRef}>
-            {locationSuggestions.map((city, i) => (
-              <li
-                key={`loc-${city}-${i}`}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => handleLocationSuggestionClick(city)}
-                onMouseEnter={() => setLocationSelectedIndex(i)}
-                className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${i === locationSelectedIndex ? 'bg-brand-orange/5' : 'hover:bg-slate-50'}`}
-              >
-                <MapPin className="w-4 h-4 text-brand-orange shrink-0" />
-                <span className="text-[13px] font-semibold text-brand-darkText">{city}</span>
-              </li>
-            ))}
-          </ul>
+      {showLocationSuggestions && (
+        <div className="absolute left-0 top-[52px] mt-1 w-full sm:max-w-[340px] sm:w-[340px] max-w-[calc(100vw-2rem)] bg-white dark:bg-slate-900 rounded-2xl border border-brand-border shadow-lg z-50 overflow-hidden max-h-[280px] overflow-y-auto">
+          {isLocationLoading && locationSuggestions.length === 0 ? (
+            <div className="flex items-center gap-2.5 px-4 py-3 text-[13px] text-brand-muted">
+              <Loader2 className="w-4 h-4 animate-spin text-brand-orange shrink-0" />
+              Finding locations…
+            </div>
+          ) : locationSuggestions.length > 0 ? (
+            <ul ref={locationSuggestionsRef}>
+              {locationSuggestions.map((s, i) => (
+                <li
+                  key={`loc-${s.placeId}-${i}`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleLocationSuggestionClick(s)}
+                  onMouseEnter={() => setLocationSelectedIndex(i)}
+                  className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${i === locationSelectedIndex ? 'bg-brand-orange/5' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                >
+                  <MapPin className="w-4 h-4 text-brand-orange shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-semibold text-brand-darkText dark:text-slate-100 truncate">{s.displayName}</span>
+                    {(s.state || s.country) && (
+                      <span className="block text-[11px] text-brand-muted truncate">{[s.state, s.country].filter(Boolean).join(', ')}</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="px-4 py-3 text-[13px] text-brand-muted">No locations found</div>
+          )}
         </div>
       )}
 

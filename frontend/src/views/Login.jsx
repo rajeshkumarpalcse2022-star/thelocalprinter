@@ -33,8 +33,8 @@ const Login = () => {
         else if (onboarding.firstBusinessStatus === "rejected") router.push("/vendor/businesses");
         else router.push("/vendor/dashboard");
       } else {
-        const redirectMap = { ADMIN: "/admin/dashboard", USER: "/user/dashboard" };
-        router.push(redirectMap[user.role] || "/user/dashboard");
+        const redirectMap = { ADMIN: "/admin/dashboard", USER: "/user/dashboard/wishlist" };
+        router.push(redirectMap[user.role] || "/user/dashboard/wishlist");
       }
     } catch (err) {
       setError(err.response?.data?.message || "Login failed. Please try again.");

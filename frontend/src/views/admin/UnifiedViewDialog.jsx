@@ -473,7 +473,18 @@ const UnifiedViewDialog = ({ open, onOpenChange, account }) => {
                           <Field label="Description" value={business.description} />
                         </div>
                         <Field label="Established Year" value={business.establishedYear?.toString()} />
-                        <Field label="Working Hours" value={business.workingHours} />
+                        <Field label="Working Hours" value={(() => {
+                          const wh = business.workingHours;
+                          if (!wh || typeof wh !== "object" || !wh.monday) return business.workingHours;
+                          const days = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+                          return days.map((d) => {
+                            const day = wh[d];
+                            const label = d.charAt(0).toUpperCase() + d.slice(1);
+                            if (!day?.open) return `${label}: Closed`;
+                            const fmt = (t) => { if (!t) return t; const [h,m] = t.split(":"); const hr = parseInt(h); const ampm = hr >= 12 ? "PM" : "AM"; const h12 = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr; return `${h12}:${m} ${ampm}`; };
+                            return `${label}: ${fmt(day.openingTime)} – ${fmt(day.closingTime)}`;
+                          }).join(", ");
+                        })()} />
                       </div>
                     </Section>
 

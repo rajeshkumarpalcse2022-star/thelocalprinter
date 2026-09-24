@@ -5,7 +5,6 @@ import {
   Search,
   Building2,
   Heart,
-  MapPin,
   ArrowRight,
   Printer,
   Star,
@@ -14,12 +13,13 @@ import {
   X,
   SlidersHorizontal,
 } from "lucide-react";
-import { getUserDashboard, getFilterOptions, getPublicBusinesses } from "../../services/userService";
+import { getUserDashboard, getFilterOptions, getPublicBusinesses, addToWishlist, removeFromWishlist } from "../../services/userService";
 import { PageLoader } from "../../components/shared/page-loader";
 import { Card, CardContent } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
+import UserBusinessCard from "../../components/user/UserBusinessCard";
 import {
   Select,
   SelectContent,
@@ -27,7 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
-import CopyableId from "../../components/admin/CopyableId";
 
 const SEARCH_PLACEHOLDERS = [
   "Search by business name...",
@@ -73,6 +72,32 @@ const UserDashboard = () => {
   const [filterPagination, setFilterPagination] = useState(null);
   const [searchPage, setSearchPage] = useState(1);
   const [filterPage, setFilterPage] = useState(1);
+  const [wishlistOverrides, setWishlistOverrides] = useState({});
+  const [togglingWishlistId, setTogglingWishlistId] = useState(null);
+  // Fresh server flags win whenever the result sets change.
+  useEffect(() => { setWishlistOverrides({}); }, [searchResults, filterResults, data]);
+
+  const isWishlisted = (b) =>
+    wishlistOverrides[b._id] ?? !!b.isWishlisted;
+
+  const toggleWishlist = async (e, businessId) => {
+    e?.stopPropagation?.();
+    setTogglingWishlistId(businessId);
+    try {
+      const currently = wishlistOverrides[businessId] ?? !!(
+        [...(searchResults || []), ...(filterResults || []), ...(data?.recentBusinesses || [])]
+          .find((x) => x._id === businessId)?.isWishlisted
+      );
+      if (currently) {
+        await removeFromWishlist(businessId);
+        setWishlistOverrides((prev) => ({ ...prev, [businessId]: false }));
+      } else {
+        await addToWishlist(businessId);
+        setWishlistOverrides((prev) => ({ ...prev, [businessId]: true }));
+      }
+    } catch (err) { /* silent */ } finally { setTogglingWishlistId(null); }
+  };
+
   const debounceRef = useRef(null);
   const searchQueryRef = useRef("");
   const filterFetchIdRef = useRef(0);
@@ -278,214 +303,6 @@ const UserDashboard = () => {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-6xl mx-auto">
-      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 md:p-10 text-white">
-        <div className="relative z-10 max-w-2xl">
-          <h1 className="text-3xl md:text-4xl font-extrabold mb-3 leading-tight">
-            Find the Perfect <span className="text-orange-400">Printing Service</span>
-          </h1>
-          <p className="text-white/60 mb-6 text-base">
-            Discover trusted local printing businesses near you
-          </p>
-
-          <form onSubmit={handleSearch} className="space-y-3">
-            <div className="flex items-center bg-white rounded-lg p-1">
-              <Search size={18} className="ml-3 text-muted-foreground flex-shrink-0" />
-              <input
-                type="text"
-                placeholder={displayPlaceholder}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex-1 border-none px-3 py-2.5 text-sm bg-transparent text-gray-900 placeholder:text-gray-400 outline-none rounded-md selection:bg-blue-200 selection:text-blue-900"
-              />
-              <Button type="submit" size="sm" className="rounded-md px-5">Search</Button>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-              <div className="flex-1 flex gap-2">
-                <div className="relative flex-1">
-                  <Input
-                    placeholder="Location..."
-                    value={locationName}
-                    readOnly
-                    className="bg-white/10 border-white/20 text-white placeholder:text-white/50 h-9 cursor-default pr-8"
-                  />
-                  {locationName && (
-                    <button
-                      type="button"
-                      onClick={() => { setLocationName(""); setUserLat(null); setUserLng(null); }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors"
-                      title="Clear location"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-9 w-9 flex-shrink-0 bg-white/10 border-white/20 text-white hover:bg-white/20"
-                  onClick={handleUseMyLocation}
-                  disabled={locationLoading}
-                  title="Use my current location"
-                >
-                  {locationLoading ? <Loader2 size={14} className="animate-spin" /> : <Navigation size={14} />}
-                </Button>
-              </div>
-              <div className="flex gap-2 items-center">
-                <Select value={radius || "all"} onValueChange={(v) => setRadius(v === "all" ? "" : v)}>
-                  <SelectTrigger className="w-full sm:w-[130px] bg-white/10 border-white/20 text-white h-9">
-                    <SelectValue placeholder="Radius" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Any Distance</SelectItem>
-                    <SelectItem value="1">1 KM</SelectItem>
-                    <SelectItem value="2">2 KM</SelectItem>
-                    <SelectItem value="5">5 KM</SelectItem>
-                    <SelectItem value="10">10 KM</SelectItem>
-                    <SelectItem value="25">25 KM</SelectItem>
-                    <SelectItem value="50">50 KM</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 bg-white/10 border-white/20 text-white hover:bg-white/20 h-9"
-                onClick={() => setShowFilters(!showFilters)}
-              >
-                <SlidersHorizontal size={14} /> Filters & Radius
-              </Button>
-              </div>
-            </div>
-
-            {showFilters && (
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-white/70">Filters & Radius</span>
-                  {(radius || category || serviceId || minRating || serviceType || customerType || orderingMethod || orderLimits) && (
-                    <button
-                      type="button"
-                      onClick={() => { setRadius(""); setCategory(""); setServiceId(""); setMinRating(""); setServiceType(""); setCustomerType(""); setOrderingMethod(""); setOrderLimits(""); }}
-                      className="text-[11px] font-medium text-orange-300 hover:text-orange-200 transition-colors"
-                    >
-                      Clear All
-                    </button>
-                  )}
-                </div>
-                <div className="flex gap-3 flex-wrap">
-                  <div className="flex-1 min-w-[130px]">
-                    <label className="text-[10px] font-medium text-white/70 uppercase tracking-wider mb-1 block">Category</label>
-                    <Select value={category || "all"} onValueChange={(v) => {
-                      setCategory(v === "all" ? "" : v);
-                      setServiceId("");
-                    }}>
-                      <SelectTrigger className="h-8 text-xs bg-white/10 border-white/20 text-white"><SelectValue placeholder="All" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Categories</SelectItem>
-                        {filters.categories.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            <div className="flex items-center gap-2">
-                              {c.image && <img src={c.image} alt="" className="h-4 w-4 object-contain" />}
-                              <span>{c.name}</span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {category && (() => {
-                    const selectedCat = filters.categories.find((c) => c.id === category);
-                    const services = selectedCat?.services || [];
-                    if (services.length === 0) return null;
-                    return (
-                      <div className="flex-1 min-w-[130px]">
-                        <label className="text-[10px] font-medium text-white/70 uppercase tracking-wider mb-1 block">Services</label>
-                        <Select value={serviceId || "all"} onValueChange={(v) => setServiceId(v === "all" ? "" : v)}>
-                          <SelectTrigger className="h-8 text-xs bg-white/10 border-white/20 text-white"><SelectValue placeholder="All" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All Services</SelectItem>
-                            {services.map((s) => (
-                              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    );
-                  })()}
-                  <div className="flex-1 min-w-[130px]">
-                    <label className="text-[10px] font-medium text-white/70 uppercase tracking-wider mb-1 block">Min Rating</label>
-                    <Select value={minRating || "all"} onValueChange={(v) => setMinRating(v === "all" ? "" : v)}>
-                      <SelectTrigger className="h-8 text-xs bg-white/10 border-white/20 text-white"><SelectValue placeholder="Any" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Any Rating</SelectItem>
-                        <SelectItem value="1">1+ <Star size={10} className="inline fill-amber-400 text-amber-400" /></SelectItem>
-                        <SelectItem value="2">2+ <Star size={10} className="inline fill-amber-400 text-amber-400" /></SelectItem>
-                        <SelectItem value="3">3+ <Star size={10} className="inline fill-amber-400 text-amber-400" /></SelectItem>
-                        <SelectItem value="4">4+ <Star size={10} className="inline fill-amber-400 text-amber-400" /></SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex-1 min-w-[130px]">
-                    <label className="text-[10px] font-medium text-white/70 uppercase tracking-wider mb-1 block">Service</label>
-                    <Select value={serviceType || "all"} onValueChange={(v) => setServiceType(v === "all" ? "" : v)}>
-                      <SelectTrigger className="h-8 text-xs bg-white/10 border-white/20 text-white"><SelectValue placeholder="All" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Services</SelectItem>
-                        {filters.serviceTypes?.map((s) => (
-                          <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex-1 min-w-[130px]">
-                    <label className="text-[10px] font-medium text-white/70 uppercase tracking-wider mb-1 block">Customer Type</label>
-                    <Select value={customerType || "all"} onValueChange={(v) => setCustomerType(v === "all" ? "" : v)}>
-                      <SelectTrigger className="h-8 text-xs bg-white/10 border-white/20 text-white"><SelectValue placeholder="All" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Types</SelectItem>
-                        {filters.customerTypes?.map((t) => (
-                          <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex-1 min-w-[130px]">
-                    <label className="text-[10px] font-medium text-white/70 uppercase tracking-wider mb-1 block">Ordering</label>
-                    <Select value={orderingMethod || "all"} onValueChange={(v) => setOrderingMethod(v === "all" ? "" : v)}>
-                      <SelectTrigger className="h-8 text-xs bg-white/10 border-white/20 text-white"><SelectValue placeholder="All" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Methods</SelectItem>
-                        {filters.orderingMethods?.map((m) => (
-                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex-1 min-w-[130px]">
-                    <label className="text-[10px] font-medium text-white/70 uppercase tracking-wider mb-1 block">Order Limits</label>
-                    <Select value={orderLimits || "all"} onValueChange={(v) => setOrderLimits(v === "all" ? "" : v)}>
-                      <SelectTrigger className="h-8 text-xs bg-white/10 border-white/20 text-white"><SelectValue placeholder="All" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Limits</SelectItem>
-                        {filters.orderLimits?.map((l) => (
-                          <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-            )}
-          </form>
-
-          {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
-        </div>
-        <div className="absolute right-6 top-1/2 -translate-y-1/2 text-white/[0.04] hidden md:block">
-          <Printer size={140} />
-        </div>
-      </div>
-
       {stats && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Card>
@@ -573,26 +390,15 @@ const UserDashboard = () => {
             <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {searchResults.map((b) => (
-                <Card key={b._id} className="cursor-pointer hover:shadow-md transition-shadow overflow-hidden" onClick={() => router.push(`/user/businesses/${b._id}`)}>
-                  <div className="h-32 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950/30 dark:to-indigo-950/30 flex items-center justify-center text-primary">
-                    <Building2 size={32} />
-                  </div>
-                  <CardContent className="p-4">
-                    <h4 className="text-sm font-bold text-foreground truncate mb-1">{b.name}</h4>
-                    {b.vendor?.publicId && (
-                      <div className="mb-1"><CopyableId id={b.vendor.publicId} /></div>
-                    )}
-                    <Badge variant="secondary" className="text-[10px] mb-2">{b.category || "Printing"}</Badge>
-                    {b.city && (
-                      <p className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
-                        <MapPin size={12} /> {b.city}
-                      </p>
-                    )}
-                    {b.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-2">{b.description.slice(0, 80)}...</p>
-                    )}
-                  </CardContent>
-                </Card>
+                <UserBusinessCard
+                  key={b._id}
+                  business={b}
+                  detailHref={`/user/businesses/${b._id}`}
+                  showWishlist
+                  wishlisted={isWishlisted(b)}
+                  togglingWishlist={togglingWishlistId === b._id}
+                  onToggleWishlist={toggleWishlist}
+                />
               ))}
             </div>
             {searchPagination && searchPagination.pages > 1 && (
@@ -642,38 +448,15 @@ const UserDashboard = () => {
             <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filterResults.map((b) => (
-                <Card key={b._id} className="cursor-pointer hover:shadow-md transition-shadow overflow-hidden" onClick={() => router.push(`/user/businesses/${b._id}`)}>
-                  <div className="h-32 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950/30 dark:to-indigo-950/30 flex items-center justify-center text-primary">
-                    <Building2 size={32} />
-                  </div>
-                  <CardContent className="p-4">
-                    <h4 className="text-sm font-bold text-foreground truncate mb-1">{b.name}</h4>
-                    {b.vendor?.publicId && (
-                      <div className="mb-1"><CopyableId id={b.vendor.publicId} /></div>
-                    )}
-                    <div className="flex items-center gap-1.5 mb-2">
-                      {b.categoryId?.image && (b.categoryId.image.trim().startsWith('<') ? <div className="h-4 w-4 [&>svg]:w-4 [&>svg]:h-4" dangerouslySetInnerHTML={{ __html: b.categoryId.image }} /> : <img src={b.categoryId.image} alt="" className="h-4 w-4 object-contain" />)}
-                      <Badge variant="secondary" className="text-[10px]">{b.category || "Printing"}</Badge>
-                    </div>
-                    {b.serviceIds && b.serviceIds.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-2">
-                        {b.serviceIds.map((service) => (
-                          <Badge key={service._id} variant="outline" className="text-[9px]">
-                            {service.name}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                    {b.city && (
-                      <p className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
-                        <MapPin size={12} /> {b.city}
-                      </p>
-                    )}
-                    {b.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-2">{b.description.slice(0, 80)}...</p>
-                    )}
-                  </CardContent>
-                </Card>
+                <UserBusinessCard
+                  key={b._id}
+                  business={b}
+                  detailHref={`/user/businesses/${b._id}`}
+                  showWishlist
+                  wishlisted={isWishlisted(b)}
+                  togglingWishlist={togglingWishlistId === b._id}
+                  onToggleWishlist={toggleWishlist}
+                />
               ))}
             </div>
             {filterPagination && filterPagination.pages > 1 && (
@@ -710,38 +493,15 @@ const UserDashboard = () => {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {recentBusinesses.map((b) => (
-              <Card key={b._id} className="cursor-pointer hover:shadow-md transition-shadow overflow-hidden" onClick={() => router.push(`/user/businesses/${b._id}`)}>
-                <div className="h-32 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950/30 dark:to-indigo-950/30 flex items-center justify-center text-primary">
-                  <Building2 size={32} />
-                </div>
-                <CardContent className="p-4">
-                  <h4 className="text-sm font-bold text-foreground truncate mb-1">{b.name}</h4>
-                    {b.vendor?.publicId && (
-                      <div className="mb-1"><CopyableId id={b.vendor.publicId} /></div>
-                    )}
-                    <div className="flex items-center gap-1.5 mb-2">
-                      {b.categoryId?.image && (b.categoryId.image.trim().startsWith('<') ? <div className="h-4 w-4 [&>svg]:w-4 [&>svg]:h-4" dangerouslySetInnerHTML={{ __html: b.categoryId.image }} /> : <img src={b.categoryId.image} alt="" className="h-4 w-4 object-contain" />)}
-                      <Badge variant="secondary" className="text-[10px]">{b.category || "Printing"}</Badge>
-                    </div>
-                    {b.serviceIds && b.serviceIds.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-2">
-                        {b.serviceIds.map((service) => (
-                          <Badge key={service._id} variant="outline" className="text-[9px]">
-                            {service.name}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                    {b.city && (
-                      <p className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
-                        <MapPin size={12} /> {b.city}
-                    </p>
-                  )}
-                  {b.description && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">{b.description.slice(0, 80)}...</p>
-                  )}
-                </CardContent>
-              </Card>
+              <UserBusinessCard
+                key={b._id}
+                business={b}
+                detailHref={`/user/businesses/${b._id}`}
+                showWishlist
+                wishlisted={isWishlisted(b)}
+                togglingWishlist={togglingWishlistId === b._id}
+                onToggleWishlist={toggleWishlist}
+              />
             ))}
           </div>
         </div>

@@ -37,11 +37,11 @@ export function AppHeader({
       )}
     >
       {/* Left: Mobile Menu + Search */}
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         <Button
           variant="ghost"
           size="icon"
-          className="md:hidden"
+          className="shrink-0 md:hidden"
           onClick={onMobileMenuToggle}
         >
           {mobileMenuOpen ? (
@@ -50,6 +50,11 @@ export function AppHeader({
             <Menu className="h-5 w-5" />
           )}
         </Button>
+        {role === "user" && (
+          <h1 className="truncate text-base font-bold sm:text-lg">
+            Welcome to User Dashboard
+          </h1>
+        )}
       </div>
 
       {/* Right: Actions */}

@@ -207,7 +207,7 @@ const VendorBusinesses = () => {
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         <div className="flex items-center gap-2">
-                          {b.categoryId?.image && (b.categoryId.image.trim().startsWith('<') ? <div className="h-5 w-5 [&>svg]:w-5 [&>svg]:h-5" dangerouslySetInnerHTML={{ __html: b.categoryId.image }} /> : <img src={b.categoryId.image} alt="" className="h-5 w-5 object-contain" />)}
+                          {b.categoryId?.image && (/^\s*</.test(b.categoryId.image) ? <div className="h-5 w-5 [&>svg]:w-5 [&>svg]:h-5" dangerouslySetInnerHTML={{ __html: b.categoryId.image }} /> : <img src={b.categoryId.image} alt="" className="h-5 w-5 object-contain" />)}
                           <div>
                             <p>{b.category || "-"}</p>
                             {b.serviceIds && b.serviceIds.length > 0 && (

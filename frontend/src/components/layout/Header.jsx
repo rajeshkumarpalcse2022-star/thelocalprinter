@@ -7,7 +7,10 @@ import gsap from 'gsap';
 import { usePathname, useRouter } from 'next/navigation'; 
 import { Menu, X, MapPin, Search, Crosshair, Loader2, LogOut, LayoutDashboard, ChevronDown, ChevronRight, Heart, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { getActiveCategories, getWishlist } from '@/services/userService';
+import { getActiveCategories, getWishlist, getPublicFilterOptions, getLocationAutocomplete } from '@/services/userService';
+
+const MOBILE_LOCATION_DEBOUNCE_MS = 300;
+const MOBILE_LOCATION_LIMIT = 5;
 
 export default function Header() {
   const headerRef = useRef(null);
@@ -25,6 +28,16 @@ export default function Header() {
   const [showMobileSuggestions, setShowMobileSuggestions] = useState(false);
   const [mobileSelectedIndex, setMobileSelectedIndex] = useState(-1);
   const [mobileNotification, setMobileNotification] = useState('');
+  const [mobileLocationSuggestions, setMobileLocationSuggestions] = useState([]);
+  const [showMobileLocationSuggestions, setShowMobileLocationSuggestions] = useState(false);
+  const [mobileLocationSelectedIndex, setMobileLocationSelectedIndex] = useState(-1);
+  const [isMobileLocationLoading, setIsMobileLocationLoading] = useState(false);
+  const mobileLocationMetaRef = useRef(null);
+  const mobileLocationDebounceRef = useRef(null);
+  const mobileLocationAbortRef = useRef(null);
+  const mobileLocationRequestIdRef = useRef(0);
+  const mobileCitiesRef = useRef([]);
+  const mobileLocationWrapperRef = useRef(null);
   const mobileCategoriesRef = useRef([]);
   const mobileSearchWrapperRef = useRef(null);
   const profileRef = useRef(null);
@@ -42,7 +55,7 @@ export default function Header() {
     switch (role) {
       case 'ADMIN': return '/admin/dashboard';
       case 'VENDOR': return '/vendor/dashboard';
-      case 'USER': return '/user/dashboard';
+      case 'USER': return '/user/dashboard/wishlist';
       default: return '/user/dashboard';
     }
   };
@@ -63,6 +76,9 @@ export default function Header() {
       if (mobileSearchWrapperRef.current && !mobileSearchWrapperRef.current.contains(e.target)) {
         setShowMobileSuggestions(false);
       }
+      if (mobileLocationWrapperRef.current && !mobileLocationWrapperRef.current.contains(e.target)) {
+        setShowMobileLocationSuggestions(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -72,6 +88,13 @@ export default function Header() {
     getActiveCategories()
       .then((res) => { mobileCategoriesRef.current = res.data?.categories || []; })
       .catch(() => { mobileCategoriesRef.current = []; });
+    getPublicFilterOptions()
+      .then((res) => { mobileCitiesRef.current = res.data?.cities || []; })
+      .catch(() => { mobileCitiesRef.current = []; });
+    return () => {
+      if (mobileLocationDebounceRef.current) clearTimeout(mobileLocationDebounceRef.current);
+      if (mobileLocationAbortRef.current) mobileLocationAbortRef.current.abort();
+    };
   }, []);
 
   const handleGetLocation = () => {
@@ -113,6 +136,86 @@ export default function Header() {
     );
   };
 
+  const computeMobileDbLocationFallback = useCallback((text) => {
+    const q = (text || '').trim().toLowerCase();
+    if (!q) return [];
+    return mobileCitiesRef.current
+      .filter((city) => city.toLowerCase().includes(q))
+      .slice(0, MOBILE_LOCATION_LIMIT)
+      .map((city) => ({ placeId: `db-${city}`, displayName: city, city, state: '', country: '', lat: null, lon: null }));
+  }, []);
+
+  const fetchMobileLocationSuggestions = useCallback((text) => {
+    const query = (text || '').trim();
+    if (mobileLocationDebounceRef.current) clearTimeout(mobileLocationDebounceRef.current);
+    if (mobileLocationAbortRef.current) mobileLocationAbortRef.current.abort();
+    if (!query) {
+      setMobileLocationSuggestions([]);
+      setShowMobileLocationSuggestions(false);
+      setIsMobileLocationLoading(false);
+      return;
+    }
+    setIsMobileLocationLoading(true);
+    setShowMobileLocationSuggestions(true);
+    const requestId = ++mobileLocationRequestIdRef.current;
+    mobileLocationDebounceRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      mobileLocationAbortRef.current = controller;
+      try {
+        const res = await getLocationAutocomplete(query, MOBILE_LOCATION_LIMIT, controller.signal);
+        if (mobileLocationRequestIdRef.current !== requestId) return;
+        setMobileLocationSuggestions((res?.data?.locations || []).slice(0, MOBILE_LOCATION_LIMIT));
+        setMobileLocationSelectedIndex(-1);
+      } catch (err) {
+        if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError' || err?.name === 'AbortError') return;
+        if (mobileLocationRequestIdRef.current !== requestId) return;
+        setMobileLocationSuggestions(computeMobileDbLocationFallback(query));
+        setMobileLocationSelectedIndex(-1);
+      } finally {
+        if (mobileLocationRequestIdRef.current === requestId) setIsMobileLocationLoading(false);
+      }
+    }, MOBILE_LOCATION_DEBOUNCE_MS);
+  }, [computeMobileDbLocationFallback]);
+
+  const handleMobileLocationChange = (e) => {
+    const val = e.target.value;
+    setLocationInput(val);
+    mobileLocationMetaRef.current = null;
+    setMobileLocationSelectedIndex(-1);
+    fetchMobileLocationSuggestions(val);
+  };
+
+  const handleMobileLocationSuggestionClick = (suggestion) => {
+    if (!suggestion) return;
+    // ONLY populate the location field — no navigation, no search.
+    setLocationInput(suggestion.displayName);
+    mobileLocationMetaRef.current = suggestion;
+    setShowMobileLocationSuggestions(false);
+    setMobileLocationSuggestions([]);
+    setMobileLocationSelectedIndex(-1);
+    setIsMobileLocationLoading(false);
+  };
+
+  const handleMobileLocationKeyDown = (e) => {
+    if (!showMobileLocationSuggestions || (mobileLocationSuggestions.length === 0 && !isMobileLocationLoading)) {
+      if (e.key === 'Escape') setShowMobileLocationSuggestions(false);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setMobileLocationSelectedIndex((prev) => (prev < mobileLocationSuggestions.length - 1 ? prev + 1 : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setMobileLocationSelectedIndex((prev) => (prev > 0 ? prev - 1 : mobileLocationSuggestions.length - 1));
+    } else if (e.key === 'Enter' && mobileLocationSelectedIndex >= 0) {
+      e.preventDefault();
+      handleMobileLocationSuggestionClick(mobileLocationSuggestions[mobileLocationSelectedIndex]);
+    } else if (e.key === 'Escape') {
+      setShowMobileLocationSuggestions(false);
+      setMobileLocationSelectedIndex(-1);
+    }
+  };
+
   const computeMobileSuggestions = useCallback((text) => {
     if (!text || !text.trim()) return [];
     const q = text.trim().toLowerCase();
@@ -145,11 +248,9 @@ export default function Header() {
   };
 
   const handleMobileSuggestionClick = (suggestion) => {
-    setSearchInput('');
+    setSearchInput(suggestion.name);
     setShowMobileSuggestions(false);
     setMobileSuggestions([]);
-    setIsMobileMenuOpen(false);
-    router.push(suggestion.href);
   };
 
   const handleMobileSearchKeyDown = (e) => {
@@ -233,9 +334,9 @@ export default function Header() {
 
             {!loading && user?.role === 'USER' && (
               <Link 
-                href="/user/wishlist" 
+                href="/user/dashboard/wishlist" 
                 className={`relative p-2 rounded-xl transition-colors ${
-                  pathname === '/user/wishlist' ? 'bg-brand-orange/10 text-brand-orange' : 'text-brand-navy hover:bg-brand-orange/10 hover:text-brand-orange'
+                  pathname === '/user/dashboard/wishlist' ? 'bg-brand-orange/10 text-brand-orange' : 'text-brand-navy hover:bg-brand-orange/10 hover:text-brand-orange'
                 }`}
               >
                 <Heart className="w-5 h-5" />
@@ -349,27 +450,64 @@ export default function Header() {
               </div>
             )}
 
-            <div className="flex items-center bg-white p-2 rounded-xl relative">
-              <MapPin className="w-[18px] h-[18px] text-brand-orange shrink-0 ml-1.5 mr-2.5" />
-              <input 
-                type="text" 
-                value={locationInput}
-                onChange={(e) => setLocationInput(e.target.value)}
-                placeholder={isLocating ? "Detecting..." : "Enter location..."} 
-                className="w-full text-[14px] bg-transparent outline-none border-none focus:ring-0 p-0 text-brand-navy font-medium placeholder:font-normal placeholder:text-gray-400" 
-              />
-              <button 
-                type="button"
-                onClick={handleGetLocation}
-                disabled={isLocating}
-                className="w-9 h-9 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center shrink-0 transition-all ml-1 active:scale-95 cursor-pointer z-10 disabled:opacity-50"
-              >
-                {isLocating ? (
-                  <Loader2 className="w-[18px] h-[18px] text-brand-orange animate-spin" />
-                ) : (
-                  <Crosshair className="w-[18px] h-[18px] text-brand-navy opacity-60 hover:opacity-100 pointer-events-none" />
-                )}
-              </button>
+            <div className="relative" ref={mobileLocationWrapperRef}>
+              <div className="flex items-center bg-white p-2 rounded-xl">
+                <MapPin className="w-[18px] h-[18px] text-brand-orange shrink-0 ml-1.5 mr-2.5" />
+                <input
+                  type="text"
+                  value={locationInput}
+                  onChange={handleMobileLocationChange}
+                  onKeyDown={handleMobileLocationKeyDown}
+                  onFocus={() => { if (locationInput.trim()) fetchMobileLocationSuggestions(locationInput); }}
+                  autoComplete="off"
+                  placeholder={isLocating ? "Detecting..." : "Enter location..."}
+                  className="w-full text-[14px] bg-transparent outline-none border-none focus:ring-0 p-0 text-brand-navy font-medium placeholder:font-normal placeholder:text-gray-400"
+                />
+                <button
+                  type="button"
+                  onClick={handleGetLocation}
+                  disabled={isLocating}
+                  aria-label="Use current location"
+                  className="w-9 h-9 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center shrink-0 transition-all ml-1 active:scale-95 cursor-pointer z-10 disabled:opacity-50"
+                >
+                  {isLocating ? (
+                    <Loader2 className="w-[18px] h-[18px] text-brand-orange animate-spin" />
+                  ) : (
+                    <Crosshair className="w-[18px] h-[18px] text-brand-navy opacity-60 hover:opacity-100 pointer-events-none" />
+                  )}
+                </button>
+              </div>
+
+              {showMobileLocationSuggestions && (
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl border border-brand-border shadow-lg z-50 overflow-hidden max-h-[240px] overflow-y-auto">
+                  {isMobileLocationLoading && mobileLocationSuggestions.length === 0 ? (
+                    <div className="flex items-center gap-2.5 px-3 py-3 text-[12px] text-brand-muted">
+                      <Loader2 className="w-4 h-4 animate-spin text-brand-orange shrink-0" />
+                      Finding locations…
+                    </div>
+                  ) : mobileLocationSuggestions.length > 0 ? (
+                    <ul>
+                      {mobileLocationSuggestions.map((s, i) => (
+                        <li
+                          key={`ml-${s.placeId}-${i}`}
+                          onClick={() => handleMobileLocationSuggestionClick(s)}
+                          className={`flex items-center gap-2.5 px-3 py-3 cursor-pointer transition-colors min-h-[44px] ${i === mobileLocationSelectedIndex ? 'bg-brand-orange/5' : 'active:bg-slate-100'}`}
+                        >
+                          <MapPin className="w-4 h-4 text-brand-orange shrink-0" />
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-[13px] font-semibold text-brand-darkText truncate">{s.displayName}</span>
+                            {(s.state || s.country) && (
+                              <span className="block text-[10px] text-brand-muted truncate">{[s.state, s.country].filter(Boolean).join(', ')}</span>
+                            )}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="px-3 py-3 text-[12px] text-brand-muted">No locations found</div>
+                  )}
+                </div>
+              )}
             </div>
             
             <div className="relative" ref={mobileSearchWrapperRef}>
@@ -382,7 +520,7 @@ export default function Header() {
                   onKeyDown={handleMobileSearchKeyDown}
                   onFocus={() => { if (searchInput.trim() && mobileSuggestions.length > 0) setShowMobileSuggestions(true); }}
                   autoComplete="off"
-                  placeholder="Search printers..." 
+                  placeholder="Search category or subcategory..." 
                   className="w-full h-9 text-[14px] bg-transparent outline-none border-none focus:ring-0 p-0 text-brand-navy font-medium placeholder:font-normal placeholder:text-gray-400" 
                 />
               </div>
@@ -450,7 +588,7 @@ export default function Header() {
               Contact
             </Link>
             {!loading && user?.role === 'USER' && (
-              <Link href="/user/wishlist" onClick={() => setIsMobileMenuOpen(false)} className={`relative flex items-center gap-3 p-4 rounded-xl text-brand-navy bg-brand-light/50 hover:bg-brand-orange/10 hover:text-brand-orange transition-colors ${pathname === '/user/wishlist' ? 'bg-brand-orange/10 text-brand-orange' : ''}`}>
+              <Link href="/user/dashboard/wishlist" onClick={() => setIsMobileMenuOpen(false)} className={`relative flex items-center gap-3 p-4 rounded-xl text-brand-navy bg-brand-light/50 hover:bg-brand-orange/10 hover:text-brand-orange transition-colors ${pathname === '/user/dashboard/wishlist' ? 'bg-brand-orange/10 text-brand-orange' : ''}`}>
                 <span className="relative">
                   <Heart className="w-5 h-5" />
                   {wishlistCount > 0 && (

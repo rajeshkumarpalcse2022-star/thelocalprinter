@@ -3,11 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   Search,
-  Building2,
-  MapPin,
-  Heart,
   X,
-  Loader2,
   SlidersHorizontal,
 } from "lucide-react";
 import {
@@ -21,7 +17,7 @@ import { PageLoader } from "../../components/shared/page-loader";
 import { Card, CardContent } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
-import { Badge } from "../../components/ui/badge";
+import UserBusinessCard from "../../components/user/UserBusinessCard";
 import {
   Select,
   SelectContent,
@@ -29,7 +25,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
-import CopyableId from "../../components/admin/CopyableId";
 
 const UserExplore = () => {
   const router = useRouter();
@@ -277,61 +272,15 @@ const UserExplore = () => {
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {businesses.map((b) => (
-              <Card key={b._id} className="cursor-pointer hover:shadow-md transition-shadow overflow-hidden" onClick={() => router.push(`/user/businesses/${b._id}`)}>
-                <div className="h-40 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950/30 dark:to-indigo-950/30 flex items-center justify-center text-primary relative overflow-hidden">
-                  {b.verificationMedia?.thumbnailImages?.[0] ? (
-                    <img src={b.verificationMedia.thumbnailImages[0]} alt={b.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <Building2 size={36} />
-                  )}
-                  <button
-                    onClick={(e) => toggleWishlist(e, b._id)}
-                    disabled={togglingWishlist === b._id}
-                    className="absolute top-2.5 right-2.5 w-8 h-8 rounded-full bg-white/90 dark:bg-background/90 flex items-center justify-center backdrop-blur-sm transition-colors hover:bg-white dark:hover:bg-background"
-                  >
-                    {togglingWishlist === b._id ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Heart size={14} className={wishlistedIds.has(b._id) ? "text-red-500 fill-red-500" : "text-muted-foreground"} />
-                    )}
-                  </button>
-                </div>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <h3 className="text-sm font-bold text-foreground truncate">{b.name}</h3>
-                  </div>
-                  {b.category && (
-                    <div className="flex items-center gap-1.5 mb-1">
-                      {b.categoryId?.image && (b.categoryId.image.trim().startsWith('<') ? <div className="h-4 w-4 [&>svg]:w-4 [&>svg]:h-4" dangerouslySetInnerHTML={{ __html: b.categoryId.image }} /> : <img src={b.categoryId.image} alt="" className="h-4 w-4 object-contain" />)}
-                      <Badge variant="secondary" className="text-[10px]">{b.category}</Badge>
-                    </div>
-                  )}
-                  {b.serviceIds && b.serviceIds.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-1">
-                      {b.serviceIds.map((service) => (
-                        <Badge key={service._id} variant="outline" className="text-[9px]">
-                          {service.name}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                  {b.vendor?.publicId && (
-                    <div className="mb-1.5"><CopyableId id={b.vendor.publicId} /></div>
-                  )}
-                  {b.city && (
-                    <p className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-                      <MapPin size={12} /> {b.city}{b.address ? `, ${b.address}` : ""}
-                    </p>
-                  )}
-                  {b.description && (
-                    <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{b.description.slice(0, 100)}...</p>
-                  )}
-                  <div className="flex flex-wrap gap-1">
-                    {b.serviceType && <Badge variant="outline" className="text-[10px] capitalize">{b.serviceType.replace(/_/g, " ")}</Badge>}
-                    {b.customerType && <Badge variant="outline" className="text-[10px]">{b.customerType.toUpperCase()}</Badge>}
-                  </div>
-                </CardContent>
-              </Card>
+              <UserBusinessCard
+                key={b._id}
+                business={b}
+                detailHref={`/user/businesses/${b._id}`}
+                showWishlist
+                wishlisted={wishlistedIds.has(b._id)}
+                togglingWishlist={togglingWishlist === b._id}
+                onToggleWishlist={toggleWishlist}
+              />
             ))}
           </div>
           {pagination && pagination.totalPages > 1 && (

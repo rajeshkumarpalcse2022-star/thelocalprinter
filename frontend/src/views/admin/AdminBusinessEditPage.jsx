@@ -90,7 +90,15 @@ const emptyForm = {
   name: "",
   description: "",
   establishedYear: "",
-  workingHours: "",
+  workingHours: {
+    monday:    { open: true,  openingTime: "09:00", closingTime: "19:00" },
+    tuesday:   { open: true,  openingTime: "09:00", closingTime: "19:00" },
+    wednesday: { open: true,  openingTime: "09:00", closingTime: "19:00" },
+    thursday:  { open: true,  openingTime: "09:00", closingTime: "19:00" },
+    friday:    { open: true,  openingTime: "09:00", closingTime: "19:00" },
+    saturday:  { open: true,  openingTime: "10:00", closingTime: "17:00" },
+    sunday:    { open: false, openingTime: "",      closingTime: "" },
+  },
   contactName: "",
   phone: "",
   whatsapp: "",
@@ -273,7 +281,20 @@ const AdminBusinessEditPage = () => {
         const b = res.data.business;
         setForm({
           name: b.name || "", description: b.description || "",
-          establishedYear: b.establishedYear || "", workingHours: b.workingHours || "",
+          establishedYear: b.establishedYear || "", workingHours: (() => {
+            if (b.workingHours && typeof b.workingHours === "object" && !Array.isArray(b.workingHours) && b.workingHours.monday) {
+              return {
+                monday:    { open: b.workingHours.monday?.open ?? true,  openingTime: b.workingHours.monday?.openingTime ?? "", closingTime: b.workingHours.monday?.closingTime ?? "" },
+                tuesday:   { open: b.workingHours.tuesday?.open ?? true,  openingTime: b.workingHours.tuesday?.openingTime ?? "", closingTime: b.workingHours.tuesday?.closingTime ?? "" },
+                wednesday: { open: b.workingHours.wednesday?.open ?? true,  openingTime: b.workingHours.wednesday?.openingTime ?? "", closingTime: b.workingHours.wednesday?.closingTime ?? "" },
+                thursday:  { open: b.workingHours.thursday?.open ?? true,  openingTime: b.workingHours.thursday?.openingTime ?? "", closingTime: b.workingHours.thursday?.closingTime ?? "" },
+                friday:    { open: b.workingHours.friday?.open ?? true,  openingTime: b.workingHours.friday?.openingTime ?? "", closingTime: b.workingHours.friday?.closingTime ?? "" },
+                saturday:  { open: b.workingHours.saturday?.open ?? true,  openingTime: b.workingHours.saturday?.openingTime ?? "", closingTime: b.workingHours.saturday?.closingTime ?? "" },
+                sunday:    { open: b.workingHours.sunday?.open ?? false, openingTime: b.workingHours.sunday?.openingTime ?? "", closingTime: b.workingHours.sunday?.closingTime ?? "" },
+              };
+            }
+            return emptyForm.workingHours;
+          })(),
           contactName: b.contactName || "", phone: b.phone || "", whatsapp: b.whatsapp || "",
           contactEmail: b.contactEmail || "", website: b.website || "",
           category: b.category || "", categoryId: b.categoryId?._id || b.categoryId || null,
@@ -447,14 +468,62 @@ const AdminBusinessEditPage = () => {
             <FormField label="Business Description">
               <Textarea value={form.description} onChange={(e) => updateField("description", e.target.value)} placeholder="Describe the business, services, and specialties..." rows={4} />
             </FormField>
-            <div className="grid grid-cols-2 gap-4">
-              <FormField label="Established Year">
-                <Input type="number" value={form.establishedYear} onChange={(e) => updateField("establishedYear", e.target.value)} placeholder="e.g. 2015" min="1900" max={new Date().getFullYear()} />
-              </FormField>
-              <FormField label="Working Hours">
-                <Input value={form.workingHours} onChange={(e) => updateField("workingHours", e.target.value)} placeholder="e.g. Mon-Sat 9AM-8PM" />
-              </FormField>
-            </div>
+            <FormField label="Established Year">
+              <Input type="number" value={form.establishedYear} onChange={(e) => updateField("establishedYear", e.target.value)} placeholder="e.g. 2015" min="1900" max={new Date().getFullYear()} />
+            </FormField>
+            <FormField label="Working Hours">
+              <div className="space-y-2">
+                {["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((day) => {
+                  const dayData = form.workingHours[day];
+                  const label = day.charAt(0).toUpperCase() + day.slice(1);
+                  return (
+                    <div key={day} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-lg border border-border bg-card">
+                      <div className="flex items-center gap-3 sm:w-[140px] shrink-0">
+                        <Switch
+                          checked={dayData.open}
+                          onCheckedChange={(checked) => {
+                            const updated = { ...form.workingHours, [day]: { ...dayData, open: checked, openingTime: checked ? dayData.openingTime : "", closingTime: checked ? dayData.closingTime : "" } };
+                            updateField("workingHours", updated);
+                          }}
+                        />
+                        <span className="text-sm font-medium text-foreground">{label}</span>
+                      </div>
+                      {dayData.open ? (
+                        <div className="flex items-center gap-2 sm:gap-3 flex-1">
+                          <div className="flex items-center gap-1.5 flex-1 sm:flex-none">
+                            <span className="text-xs text-muted-foreground hidden sm:inline">From</span>
+                            <input
+                              type="time"
+                              value={dayData.openingTime}
+                              onChange={(e) => {
+                                const updated = { ...form.workingHours, [day]: { ...dayData, openingTime: e.target.value } };
+                                updateField("workingHours", updated);
+                              }}
+                              className="flex-1 sm:w-[130px] h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                            />
+                          </div>
+                          <span className="text-muted-foreground text-sm">—</span>
+                          <div className="flex items-center gap-1.5 flex-1 sm:flex-none">
+                            <span className="text-xs text-muted-foreground hidden sm:inline">To</span>
+                            <input
+                              type="time"
+                              value={dayData.closingTime}
+                              onChange={(e) => {
+                                const updated = { ...form.workingHours, [day]: { ...dayData, closingTime: e.target.value } };
+                                updateField("workingHours", updated);
+                              }}
+                              className="flex-1 sm:w-[130px] h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">Closed</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </FormField>
           </div>
         );
 

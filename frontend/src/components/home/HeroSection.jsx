@@ -20,15 +20,15 @@ import StatsStrip from '@/components/home/StatsStrip';
 import Button from '@/components/common/Button'; 
 
 const categories = [
-  { name: 'Digital Printing', icon: Printer, href: '/search?q=digital+printing' },
-  { name: 'Print Shop', icon: Store, href: '/search?q=print+shop' },
-  { name: 'Xerox Shop', icon: Copy, href: '/search?q=xerox+shop' },
-  { name: 'Sign Boards', icon: LayoutTemplate, href: '/search?q=sign+boards' },
-  { name: 'T shirt', icon: Shirt, href: '/search?q=t+shirt' },
-  { name: 'Packaging', icon: Package, href: '/search?q=packaging' },
-  { name: 'Marketing Materials', icon: Megaphone, href: '/search?q=marketing+materials' },
-  { name: 'Display Stands', icon: Presentation, href: '/search?q=display+stands' },
-  { name: 'Instagram Trending', icon: TrendingUp, href: '/search?q=instagram+trending' }
+  { name: 'Digital Printing', icon: Printer, href: '/category-guides/digital-printing' },
+  { name: 'Print Shop', icon: Store, href: '/category-guides/print-shop' },
+  { name: 'Xerox Shop', icon: Copy, href: '/category-guides/xerox-shop' },
+  { name: 'Sign Boards', icon: LayoutTemplate, href: '/category-guides/sign-boards' },
+  { name: 'T shirt', icon: Shirt, href: '/category-guides/t-shirt' },
+  { name: 'Packaging', icon: Package, href: '/category-guides/packaging' },
+  { name: 'Marketing Materials', icon: Megaphone, href: '/category-guides/marketing-materials' },
+  { name: 'Display Stands', icon: Presentation, href: '/category-guides/display-stands' },
+  { name: 'Instagram Trending', icon: TrendingUp, href: '/category-guides/instagram-trending' }
 ];
 
 export default function HeroSection() {

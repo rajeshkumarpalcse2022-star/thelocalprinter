@@ -23,7 +23,7 @@ export default function Footer() {
           <ul className="flex flex-col gap-3 text-[14px] text-white/80">
             <li><Link href="/search" className="hover:text-brand-orange transition-colors">Search Businesses</Link></li>
             <li><Link href="/signup" className="hover:text-brand-orange transition-colors">List Your Business</Link></li>
-            <li><Link href="/user/dashboard" className="hover:text-brand-orange transition-colors">My Listings</Link></li>
+            <li><Link href="/user/dashboard/wishlist" className="hover:text-brand-orange transition-colors">My Listings</Link></li>
           </ul>
         </div>
 
