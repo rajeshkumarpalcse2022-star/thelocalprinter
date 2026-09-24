@@ -300,7 +300,107 @@ exports.getBusinessById = async (req, res) => {
 // GET /api/user/public/locations/autocomplete?q=&limit=
 // Server-side proxy to OpenStreetMap Nominatim search so no key/secret
 // is exposed in client code and suggestions are NOT limited to DB cities.
+//
+// Sources merged per request:
+//   1. DB cities (Business.distinct city) — substring match, preserved as-is.
+//   2. Nominatim free-form search (countrycodes=in) with locality-aware labels.
+// Results are normalized, deduplicated (exact-label only) and ranked by
+// application-level relevance, then sliced to `limit` (max 8).
+// Any upstream/DB failure degrades gracefully — never throws.
 const locationCache = new Map(); // key -> { expires, data }
+const dbCityCache = { expires: 0, cities: [] };
+const NOMINATIM_TIMEOUT_MS = 5000;
+const DB_CITY_CACHE_MS = 5 * 60 * 1000;
+
+const nominatimFetch = async (query, limit) => {
+  const url =
+    `https://nominatim.openstreetmap.org/search?format=jsonv2` +
+    `&q=${encodeURIComponent(query)}` +
+    `&countrycodes=in&limit=${limit}&addressdetails=1&accept-language=en`;
+  const upstream = await fetch(url, {
+    headers: {
+      "User-Agent": "thelocalprinter/1.0 (location-autocomplete)",
+      Accept: "application/json",
+    },
+    signal: AbortSignal.timeout(NOMINATIM_TIMEOUT_MS),
+  });
+  // 429 = Nominatim asking us to slow down: report it so callers can
+  // skip the retry (which would only add pressure) and avoid caching.
+  if (upstream.status === 429) return { results: [], rateLimited: true };
+  if (!upstream.ok) return { results: [], rateLimited: false };
+  const raw = await upstream.json();
+  return { results: Array.isArray(raw) ? raw : [], rateLimited: false };
+};
+
+const getDbCities = async () => {
+  if (dbCityCache.expires > Date.now()) return dbCityCache.cities;
+  const cities = await Business.distinct("city", {
+    status: "approved",
+    isActive: true,
+    city: { $ne: "" },
+  });
+  dbCityCache.cities = (cities || []).filter(Boolean);
+  dbCityCache.expires = Date.now() + DB_CITY_CACHE_MS;
+  return dbCityCache.cities;
+};
+
+// Build "Locality, City, State" style labels from Nominatim address parts.
+const buildNominatimLabel = (item, fallbackQuery) => {
+  const addr = item.address || {};
+  const norm = (v) => (typeof v === "string" ? v.trim() : "");
+  const locality = norm(addr.neighbourhood || addr.suburb || addr.quarter);
+  const cityPart = norm(
+    addr.city || addr.town || addr.municipality || addr.village ||
+    addr.county || addr.state_district || ""
+  );
+  const state = norm(addr.state);
+  const parts = [];
+  if (locality && locality.toLowerCase() !== cityPart.toLowerCase()) parts.push(locality);
+  if (cityPart) parts.push(cityPart);
+  if (state && state.toLowerCase() !== (parts[parts.length - 1] || "").toLowerCase()) parts.push(state);
+  if (parts.length > 0) {
+    return {
+      displayName: parts.join(", "),
+      locality: locality || "",
+      city: cityPart,
+      state,
+      country: norm(addr.country),
+    };
+  }
+  const fallbackParts = (item.display_name || "").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 3);
+  const displayName = fallbackParts.join(", ") || item.display_name || fallbackQuery;
+  return {
+    displayName,
+    locality: "",
+    city: cityPart || fallbackParts[0] || "",
+    state: state || fallbackParts[1] || "",
+    country: norm(addr.country),
+  };
+};
+
+// Application-level relevance score for a candidate against query tokens.
+const scoreLocation = (candidate, queryLower, tokens, isDb) => {
+  const name = (candidate.displayName || "").toLowerCase();
+  let score = 0;
+  if (name === queryLower) score += 100;
+  else if (name.startsWith(queryLower)) score += 50;
+  if (tokens.length > 0) {
+    const matched = tokens.filter((t) => name.includes(t)).length;
+    score += (matched / tokens.length) * 40;
+  }
+  const localityLower = (candidate.locality || "").toLowerCase();
+  if (localityLower && tokens.some((t) => localityLower.includes(t) || t.includes(localityLower))) score += 25;
+  const cityLower = (candidate.city || "").toLowerCase();
+  if (cityLower && tokens.some((t) => cityLower === t || cityLower.includes(t) || t.includes(cityLower))) score += 20;
+  // Penalize vague results with no city/locality detail.
+  if (!cityLower && !localityLower) {
+    if ((candidate.state || "").trim()) score -= 20;
+    else score -= 50;
+  }
+  if (isDb) score += 5; // keep existing DB suggestions prominent
+  return score;
+};
+
 exports.getLocationAutocomplete = async (req, res) => {
   try {
     const q = (req.query.q || "").trim();
@@ -317,44 +417,83 @@ exports.getLocationAutocomplete = async (req, res) => {
       return res.status(200).json({ success: true, data: { locations: cached.data } });
     }
 
-    const url =
-      `https://nominatim.openstreetmap.org/search?format=jsonv2` +
-      `&q=${encodeURIComponent(q)}` +
-      `&countrycodes=in&limit=${limit}&addressdetails=1&accept-language=en`;
+    const queryLower = q.toLowerCase();
+    const tokens = queryLower.split(/[\s,]+/).filter(Boolean);
 
-    const upstream = await fetch(url, {
-      headers: {
-        "User-Agent": "thelocalprinter/1.0 (location-autocomplete)",
-        Accept: "application/json",
-      },
-    });
-    if (!upstream.ok) {
-      return res.status(200).json({ success: true, data: { locations: [] } });
+    // 1. DB cities — same substring semantics as the client-side fallback.
+    let dbMatches = [];
+    try {
+      const cities = await getDbCities();
+      dbMatches = cities
+        .filter((city) => city.toLowerCase().includes(queryLower))
+        .slice(0, limit)
+        .map((city) => ({
+          placeId: `db-${city}`,
+          displayName: city,
+          locality: "",
+          city,
+          state: "",
+          country: "",
+          lat: null,
+          lon: null,
+          source: "db",
+        }));
+    } catch (dbErr) {
+      dbMatches = [];
     }
-    const raw = await upstream.json();
 
-    const locations = (Array.isArray(raw) ? raw : []).slice(0, limit).map((item) => {
-      const addr = item.address || {};
-      const city =
-        addr.city || addr.town || addr.village || addr.hamlet ||
-        addr.suburb || addr.county || addr.state_district || item.name || "";
-      const state = addr.state || "";
-      const country = addr.country || "";
-      const displayName = [city, state].filter(Boolean).join(", ") ||
-        (item.display_name || "").split(",").slice(0, 2).join(",").trim() ||
-        item.display_name || q;
+    // 2. Nominatim free-form search; one controlled retry (drop last token)
+    // only when the first attempt succeeds but yields nothing useful.
+    // Never retry on rate-limiting — that would only add pressure.
+    let raw = [];
+    try {
+      const first = await nominatimFetch(q, 8);
+      raw = first.results;
+      if (!first.rateLimited && raw.length === 0 && tokens.length >= 2) {
+        const retryQuery = tokens.slice(0, -1).join(" ");
+        if (retryQuery) raw = (await nominatimFetch(retryQuery, 8)).results;
+      }
+    } catch (nominatimErr) {
+      raw = [];
+    }
+
+    const osmMatches = raw.map((item) => {
+      const label = buildNominatimLabel(item, q);
       return {
-        placeId: String(item.place_id ?? item.osm_id ?? displayName),
-        displayName,
-        city,
-        state,
-        country,
+        placeId: String(item.place_id ?? item.osm_id ?? label.displayName),
+        displayName: label.displayName,
+        locality: label.locality,
+        city: label.city,
+        state: label.state,
+        country: label.country,
         lat: item.lat !== undefined ? parseFloat(item.lat) : null,
         lon: item.lon !== undefined ? parseFloat(item.lon) : null,
+        source: "osm",
       };
     });
 
-    locationCache.set(cacheKey, { expires: Date.now() + 10 * 60 * 1000, data: locations });
+    // 3. Merge: keep every DB row; drop only exact-label duplicates.
+    const seen = new Set();
+    const merged = [];
+    for (const loc of [...dbMatches, ...osmMatches]) {
+      const key = (loc.displayName || "").toLowerCase().replace(/\s+/g, " ").trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(loc);
+    }
+
+    // 4. Rank by relevance (stable: DB first on ties), slice to limit.
+    merged.sort(
+      (a, b) =>
+        scoreLocation(b, queryLower, tokens, b.source === "db") -
+        scoreLocation(a, queryLower, tokens, a.source === "db")
+    );
+    const locations = merged.slice(0, limit);
+
+    // Cache hits long-term; cache empty results only briefly so a
+    // transient upstream failure (e.g. rate-limit) recovers quickly.
+    const ttl = locations.length > 0 ? 10 * 60 * 1000 : 30 * 1000;
+    locationCache.set(cacheKey, { expires: Date.now() + ttl, data: locations });
     if (locationCache.size > 200) {
       const firstKey = locationCache.keys().next().value;
       locationCache.delete(firstKey);
