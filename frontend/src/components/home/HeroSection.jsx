@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
+import { useRouter } from 'next/navigation';
 import { 
   MapPin, 
   Briefcase, 
@@ -33,6 +34,44 @@ const categories = [
 
 export default function HeroSection() {
   const containerRef = useRef(null);
+  const router = useRouter();
+  const [isLocating, setIsLocating] = useState(false);
+
+  const handleFindPrintersNearMe = () => {
+    if (isLocating) return;
+    if (!navigator.geolocation) {
+      router.push('/search');
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+          const data = await res.json();
+          const city = data?.address?.city || data?.address?.town || data?.address?.village || data?.address?.suburb || data?.address?.county || '';
+          if (city) {
+            window.dispatchEvent(new CustomEvent('near-me-location', { detail: { city } }));
+            router.push(`/search?location=${encodeURIComponent(city)}`);
+          } else {
+            router.push('/search');
+          }
+        } catch (err) {
+          console.warn(err);
+          router.push('/search');
+        } finally {
+          setIsLocating(false);
+        }
+      },
+      (error) => {
+        console.warn(error.message);
+        setIsLocating(false);
+        alert('Location access denied. Please type your city.');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -69,12 +108,12 @@ export default function HeroSection() {
 
           <div className="hero-element flex flex-col sm:flex-row items-center justify-center gap-3.5 mb-10 w-full sm:w-auto">
             <Button
-              href="/search"
+              onClick={handleFindPrintersNearMe}
               icon={MapPin}
               iconPosition="left"
               className="w-full sm:w-auto h-[48px] px-7 rounded-full bg-brand-orange text-white text-[14px] font-semibold hover:bg-[#E04812] transition-colors shadow-md shadow-brand-orange/20"
             >
-              Find Printers Near Me
+              {isLocating ? 'Detecting...' : 'Find Printers Near Me'}
             </Button>
 
             <Button 

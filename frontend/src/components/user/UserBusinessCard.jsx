@@ -10,6 +10,7 @@ import {
   Navigation,
   ArrowRight,
   User as UserIcon,
+  BadgeCheck,
 } from "lucide-react";
 import { Card, CardContent } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -57,10 +58,23 @@ const UserBusinessCard = ({
   const services = Array.isArray(b.serviceIds) ? b.serviceIds : [];
   const rating = b.ratingSummary?.averageRating || 0;
   const reviewCount = b.ratingSummary?.reviewCount || 0;
+  const isGpsVerified = !!(
+    b.gpsCoordinates &&
+    b.gpsCoordinates.lat !== null &&
+    b.gpsCoordinates.lat !== "" &&
+    b.gpsCoordinates.lng !== null &&
+    b.gpsCoordinates.lng !== "" &&
+    Number.isFinite(Number(b.gpsCoordinates.lat)) &&
+    Number.isFinite(Number(b.gpsCoordinates.lng))
+  );
 
   const goToProfile = () => {
     if (detailHref) router.push(detailHref);
   };
+
+  const directionsHref = isGpsVerified
+    ? `https://www.google.com/maps/dir/?api=1&destination=${Number(b.gpsCoordinates.lat)},${Number(b.gpsCoordinates.lng)}`
+    : "";
 
   return (
     <Card
@@ -78,11 +92,21 @@ const UserBusinessCard = ({
         ) : (
           <Building2 size={36} />
         )}
-        {reviewCount > 0 && (
-          <span className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 bg-black/65 text-white text-[11px] font-semibold px-2 py-1 rounded-full backdrop-blur-sm">
-            <Star size={11} className="fill-amber-400 text-amber-400" />
-            {rating.toFixed(1)} ({reviewCount})
-          </span>
+        {(isGpsVerified || reviewCount > 0) && (
+          <div className="absolute top-2.5 left-2.5 z-10 flex flex-col items-start gap-1.5">
+            {isGpsVerified && (
+              <span className="inline-flex items-center gap-1 bg-emerald-600/95 text-white text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full backdrop-blur-sm shadow-sm">
+                <BadgeCheck size={12} className="shrink-0" />
+                GPS Verified
+              </span>
+            )}
+            {reviewCount > 0 && (
+              <span className="inline-flex items-center gap-1 bg-black/65 text-white text-[11px] font-semibold px-2 py-1 rounded-full backdrop-blur-sm">
+                <Star size={11} className="fill-amber-400 text-amber-400" />
+                {rating.toFixed(1)} ({reviewCount})
+              </span>
+            )}
+          </div>
         )}
         {showWishlist && (
           <button
@@ -173,10 +197,24 @@ const UserBusinessCard = ({
         {(b.city || b.address || b.distance != null) && (
           <p className="flex items-center gap-1 text-xs text-muted-foreground">
             <MapPin size={12} className="shrink-0" />
-            <span className="truncate">
-              {b.city}
-              {b.address ? `, ${b.address}` : ""}
-            </span>
+            {directionsHref ? (
+              <a
+                href={directionsHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Get directions"
+                onClick={(e) => e.stopPropagation()}
+                className="truncate hover:text-primary hover:underline underline-offset-2"
+              >
+                {b.city}
+                {b.address ? `, ${b.address}` : ""}
+              </a>
+            ) : (
+              <span className="truncate">
+                {b.city}
+                {b.address ? `, ${b.address}` : ""}
+              </span>
+            )}
             {b.distance != null && (
               <span className="inline-flex items-center gap-0.5 shrink-0 text-primary font-medium">
                 <Navigation size={11} /> {b.distance} km

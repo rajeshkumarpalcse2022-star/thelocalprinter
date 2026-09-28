@@ -129,14 +129,14 @@ exports.getPublicBusinesses = async (req, res) => {
     const useGeo = lat !== null && lng !== null && radius > 0;
     if (useGeo) {
       const latRad = (lat * Math.PI) / 180;
-      const deltaLat = radius / 6371;
-      const deltaLng = radius / (6371 * Math.cos(latRad));
+      const deltaLat = (radius / 6371) * (180 / Math.PI);
+      const deltaLng = deltaLat / Math.cos(latRad);
       query["gpsCoordinates.lat"] = { $gte: lat - deltaLat, $lte: lat + deltaLat };
       query["gpsCoordinates.lng"] = { $gte: lng - deltaLng, $lte: lng + deltaLng };
     }
 
     let allBusinesses;
-    if (minRating > 0) {
+    if (minRating > 0 || useGeo) {
       allBusinesses = await Business.find(query)
         .populate("categoryId", "name slug image")
         .populate("serviceIds", "name slug")

@@ -45,6 +45,21 @@ export default function SearchBar() {
       .catch(() => { citiesRef.current = []; });
   }, []);
 
+  // Fill the location field when "Find Printers Near Me" detects the user's position.
+  useEffect(() => {
+    const onNearMeLocation = (e) => {
+      const city = e?.detail?.city;
+      if (city) {
+        setLocation(city);
+        locationMetaRef.current = null;
+        setShowLocationSuggestions(false);
+        setLocationSuggestions([]);
+      }
+    };
+    window.addEventListener('near-me-location', onNearMeLocation);
+    return () => window.removeEventListener('near-me-location', onNearMeLocation);
+  }, []);
+
   const computeSuggestions = useCallback((text) => {
     if (!text || !text.trim()) return [];
     const q = text.trim().toLowerCase();

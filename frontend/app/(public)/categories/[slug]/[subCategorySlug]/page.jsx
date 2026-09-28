@@ -3,7 +3,7 @@
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import PageHero from '@/components/common/PageHero';
-import BusinessCard from '@/components/directory/BusinessCard';
+import UserBusinessCard from '@/components/user/UserBusinessCard';
 import { ChevronRight } from 'lucide-react';
 import { getActiveCategories } from '@/services/userService';
 import api from '@/services/api';
@@ -75,24 +75,6 @@ export default function SubCategoryPage({ params }) {
           <span className="text-brand-navy font-semibold">{subcategoryName}</span>
         </nav>
 
-        {parentCategory && parentCategory.services && parentCategory.services.length > 0 && (
-          <div className="mb-12">
-            <h2 className="text-[20px] font-extrabold text-brand-navy mb-4">Other Subcategories in {categoryName}</h2>
-            <div className="bg-white rounded-2xl border border-brand-border shadow-sm divide-y divide-brand-border">
-              {parentCategory.services.map((sub) => (
-                <Link
-                  key={sub._id}
-                  href={`/categories/${slug}/${sub.slug}`}
-                  className={`flex items-center justify-between px-6 py-4 transition-colors group ${sub.slug === subCategorySlug ? 'bg-brand-orange/5 border-l-4 border-l-brand-orange' : 'hover:bg-brand-light'}`}
-                >
-                  <span className={`text-[15px] font-semibold transition-colors ${sub.slug === subCategorySlug ? 'text-brand-orange' : 'text-brand-navy group-hover:text-brand-orange'}`}>{sub.name}</span>
-                  <ChevronRight className="w-4 h-4 text-brand-muted group-hover:text-brand-orange transition-colors" />
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
-
         <h2 className="text-[24px] font-extrabold text-brand-navy mb-6">
           {bizLoading ? 'Loading...' : `${subcategoryName} Businesses (${businesses.length})`}
         </h2>
@@ -104,11 +86,15 @@ export default function SubCategoryPage({ params }) {
           </div>
         ) : businesses.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {businesses.map((biz) => <BusinessCard key={biz._id} business={biz} />)}
+            {businesses.map((biz) => <UserBusinessCard key={biz._id} business={biz} detailHref={`/businesses/${biz._id}`} />)}
           </div>
         ) : (
-          <div className="text-center py-20 bg-white rounded-2xl border border-brand-border shadow-sm">
-            <p className="text-[14px] text-brand-muted">No businesses found for this subcategory.</p>
+          <div className="flex flex-col items-center justify-center py-12 text-center bg-white rounded-2xl border border-brand-border shadow-sm">
+            <img src="/data-not-found.png" alt="No Data Found" className="mb-4 h-48 w-48 object-contain" />
+            <h3 className="mb-1 text-base font-semibold text-brand-navy">No Data Found in Database</h3>
+            <p className="max-w-xs text-sm text-brand-muted">
+              No approved businesses yet for {subcategoryName}. Check back soon!
+            </p>
           </div>
         )}
       </div>

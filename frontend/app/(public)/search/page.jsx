@@ -13,7 +13,10 @@ import {
   Moon,
 } from 'lucide-react';
 import UserBusinessCard from '@/components/user/UserBusinessCard';
-import { searchPublicBusinesses, getPublicFilterOptions } from '@/services/userService';
+import { searchPublicBusinesses, getPublicFilterOptions, getLocationAutocomplete } from '@/services/userService';
+
+const RADIUS_OPTIONS = [5, 10, 25, 50];
+const RADIUS_DEFAULT = 5;
 
 const CustomDropdown = ({ value, onChange, options, placeholder = "Select...", minWidth = "min-w-[220px]", align = "left", direction = "down" }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -84,6 +87,9 @@ function SearchContent() {
   const [filterDeal, setFilterDeal] = useState('B2B, B2C & both');
   const [filterLimit, setFilterLimit] = useState('Any');
   const [showFilters, setShowFilters] = useState(false);
+  const [radius, setRadius] = useState(RADIUS_DEFAULT);
+  const [radiusApplied, setRadiusApplied] = useState(RADIUS_DEFAULT);
+  const [searchCoords, setSearchCoords] = useState(null);
 
   const [businesses, setBusinesses] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 12, total: 0, pages: 0 });
@@ -121,10 +127,36 @@ function SearchContent() {
     }).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const loc = (location || '').trim();
+    if (!loc) {
+      setSearchCoords(null);
+      return undefined;
+    }
+    let cancelled = false;
+    getLocationAutocomplete(loc, 8)
+      .then((res) => {
+        if (cancelled) return;
+        const list = res?.data?.locations || [];
+        const match = list.find((l) =>
+          l && l.lat !== null && l.lon !== null && l.lat !== '' && l.lon !== '' &&
+          Number.isFinite(Number(l.lat)) && Number.isFinite(Number(l.lon))
+        );
+        setSearchCoords(match ? { lat: Number(match.lat), lng: Number(match.lon) } : null);
+      })
+      .catch(() => { if (!cancelled) setSearchCoords(null); });
+    return () => { cancelled = true; };
+  }, [location]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setRadiusApplied(radius), 350);
+    return () => clearTimeout(t);
+  }, [radius]);
+
   const hasActiveFilters = !!(keyword.trim() || location.trim() || filterCategory !== 'All Categories' || filterService !== 'All services' || filterOrder !== 'All order types' || filterDeal !== 'B2B, B2C & both' || filterLimit !== 'Any' || filterRating !== 'Any rating');
 
   const filtersRef = useRef({});
-  filtersRef.current = { keyword, location, filterCategory, filterService, filterOrder, filterDeal, filterLimit, filterRating, filterOptions };
+  filtersRef.current = { keyword, location, filterCategory, filterService, filterOrder, filterDeal, filterLimit, filterRating, filterOptions, radiusApplied, searchCoords };
 
   const doFetch = useCallback(async (page = 1) => {
     const f = filtersRef.current;
@@ -155,6 +187,11 @@ function SearchContent() {
       if (f.filterRating !== 'Any rating') {
         params.minRating = f.filterRating === '4 Stars & up' ? 4 : 3;
       }
+      if (f.searchCoords && Number(f.radiusApplied) > 0) {
+        params.lat = f.searchCoords.lat;
+        params.lng = f.searchCoords.lng;
+        params.radius = Number(f.radiusApplied);
+      }
 
       Object.keys(params).forEach(key => {
         if (params[key] === '' || params[key] === null || params[key] === undefined) delete params[key];
@@ -176,7 +213,7 @@ function SearchContent() {
   useEffect(() => {
     doFetch(1);
     setCurrentPage(1);
-  }, [keyword, location, filterCategory, filterService, filterOrder, filterDeal, filterLimit, filterRating, filterOptions, doFetch]);
+  }, [keyword, location, filterCategory, filterService, filterOrder, filterDeal, filterLimit, filterRating, filterOptions, radiusApplied, searchCoords, doFetch]);
 
   const handlePageChange = (newPage) => {
     setCurrentPage(newPage);
@@ -193,6 +230,8 @@ function SearchContent() {
     setFilterDeal('B2B, B2C & both');
     setFilterLimit('Any');
     setFilterRating('Any rating');
+    setRadius(RADIUS_DEFAULT);
+    setRadiusApplied(RADIUS_DEFAULT);
   };
 
   useEffect(() => {
@@ -265,6 +304,28 @@ function SearchContent() {
                     <label className={`text-[11px] font-extrabold uppercase tracking-wider mb-2 ${isDark ? 'text-gray-300' : 'text-brand-navy'}`}>Orders Limit</label>
                     <div className={`border-b py-1.5 transition-colors ${isDark ? 'border-gray-600 hover:border-gray-400' : 'border-gray-100 hover:border-gray-300'}`}>
                       <CustomDropdown value={filterLimit} onChange={setFilterLimit} options={['Any', 'No Limit', 'Single', 'Minimum', 'Bulk']} direction="up" />
+                    </div>
+                  </div>
+                  <div className="flex flex-col md:col-span-2">
+                    <label className={`text-[11px] font-extrabold uppercase tracking-wider mb-2 ${isDark ? 'text-gray-300' : 'text-brand-navy'}`}>
+                      Radius: <span className="text-brand-orange">{radius} KM</span>
+                    </label>
+                    <div className={`border-b py-1.5 transition-colors ${isDark ? 'border-gray-600' : 'border-gray-100'}`}>
+                      <input
+                        type="range"
+                        min={0}
+                        max={RADIUS_OPTIONS.length - 1}
+                        step={1}
+                        value={Math.max(0, RADIUS_OPTIONS.indexOf(radius))}
+                        onChange={(e) => setRadius(RADIUS_OPTIONS[Number(e.target.value)] || RADIUS_DEFAULT)}
+                        aria-label="Radius in kilometers"
+                        className="w-full accent-brand-orange cursor-pointer touch-none"
+                      />
+                      <div className={`flex justify-between text-[11px] font-semibold mt-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                        {RADIUS_OPTIONS.map((v) => (
+                          <span key={v} className={radius === v ? 'text-brand-orange' : ''}>{v} km</span>
+                        ))}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-end">

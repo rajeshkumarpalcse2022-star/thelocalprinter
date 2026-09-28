@@ -6,7 +6,7 @@ import {
   MessageCircle, Loader2, Languages, CreditCard,
   FileText, Star, Send, Trash2, Edit2, MessageSquare, Mail, Share2,
   Camera, Wrench, Shield, FileImage, ClipboardList,
-  Package, X, ChevronLeft, ChevronRight, Eye, ExternalLink, Sun, Moon,
+  Package, X, ChevronLeft, ChevronRight, Eye, ExternalLink, Sun, Moon, Video, BadgeCheck, Navigation,
 } from "lucide-react";
 import {
   getBusinessDetails, getPublicBusinessDetails, addToWishlist, removeFromWishlist,
@@ -481,11 +481,17 @@ const UserBusinessDetails = ({ publicMode = false }) => {
       <article className="overflow-hidden rounded-3xl border border-slate-200/70 bg-white text-card-foreground shadow-xl shadow-slate-900/[0.06] dark:border-border/60 dark:bg-card dark:shadow-black/40">
         <div className="p-5 sm:p-8 md:p-10">
       <div className="pb-8">
-        <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950/30 dark:to-indigo-950/30 flex items-center justify-center text-primary h-44 md:h-64">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950/30 dark:to-indigo-950/30 flex items-center justify-center text-primary h-44 md:h-64">
           {heroImage ? (
             <img src={heroImage} alt={business.name} className="w-full h-full object-cover" />
           ) : (
             <Building2 size={48} />
+          )}
+          {hasCoords && (
+            <span className="absolute top-3 left-3 z-10 inline-flex items-center gap-1 bg-emerald-600/95 text-white text-[11px] font-extrabold uppercase tracking-wide px-2.5 py-1.5 rounded-full backdrop-blur-sm shadow-sm">
+              <BadgeCheck size={13} className="shrink-0" />
+              GPS Verified
+            </span>
           )}
         </div>
         <div className="pt-5">
@@ -531,7 +537,19 @@ const UserBusinessDetails = ({ publicMode = false }) => {
           {(business.city || business.address) && (
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground mt-3">
               <MapPin size={14} className="shrink-0" />
-              <span className="break-words">{[business.city, business.address].filter(Boolean).join(", ")}</span>
+              {hasCoords ? (
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Get directions"
+                  className="break-words hover:text-primary hover:underline underline-offset-2"
+                >
+                  {[business.city, business.address].filter(Boolean).join(", ")}
+                </a>
+              ) : (
+                <span className="break-words">{[business.city, business.address].filter(Boolean).join(", ")}</span>
+              )}
             </p>
           )}
           {business.contactName && (
@@ -695,14 +713,25 @@ const UserBusinessDetails = ({ publicMode = false }) => {
                       loading="lazy"
                     />
                   </div>
-                  <a
-                    href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=15/${lat}/${lng}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[13px] font-medium text-primary hover:underline"
-                  >
-                    Open in Maps <ExternalLink size={13} />
-                  </a>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <a
+                      href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=15/${lat}/${lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[13px] font-medium text-primary hover:underline"
+                    >
+                      Open in Maps <ExternalLink size={13} />
+                    </a>
+                    <Button asChild size="sm" className="gap-1.5 font-bold">
+                      <a
+                        href={`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Navigation size={15} /> Directions
+                      </a>
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 (business.address || business.city) && (
@@ -712,6 +741,28 @@ const UserBusinessDetails = ({ publicMode = false }) => {
             </div>
           </ProfileSection>
         )}
+
+        {/* 10b. Videos — only the two public validation videos for USER-facing views */}
+        {hidePrivate &&
+          (business.verificationMedia?.machineryWorkingVideo ||
+            business.verificationMedia?.completeOutletVideo) && (
+            <ProfileSection title="Videos" icon={Video}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {business.verificationMedia?.machineryWorkingVideo && (
+                  <VideoPlayer
+                    url={business.verificationMedia.machineryWorkingVideo}
+                    label="Machinery Working Video"
+                  />
+                )}
+                {business.verificationMedia?.completeOutletVideo && (
+                  <VideoPlayer
+                    url={business.verificationMedia.completeOutletVideo}
+                    label="Complete Outlet Video"
+                  />
+                )}
+              </div>
+            </ProfileSection>
+          )}
 
         {/* 11. Store Photos — outdoor/indoor only in USER-facing views */}
         {(!hidePrivate || storeImages.length > 0) && (

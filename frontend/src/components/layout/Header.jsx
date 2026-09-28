@@ -97,6 +97,21 @@ export default function Header() {
     };
   }, []);
 
+  // Fill the mobile location field when "Find Printers Near Me" detects the user's position.
+  useEffect(() => {
+    const onNearMeLocation = (e) => {
+      const city = e?.detail?.city;
+      if (city) {
+        setLocationInput(city);
+        mobileLocationMetaRef.current = null;
+        setShowMobileLocationSuggestions(false);
+        setMobileLocationSuggestions([]);
+      }
+    };
+    window.addEventListener('near-me-location', onNearMeLocation);
+    return () => window.removeEventListener('near-me-location', onNearMeLocation);
+  }, []);
+
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser.');
