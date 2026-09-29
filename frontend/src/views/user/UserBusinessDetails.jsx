@@ -19,6 +19,7 @@ import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 import { Textarea } from "../../components/ui/textarea";
 import { Label } from "../../components/ui/label";
 import CopyableId from "../../components/admin/CopyableId";
+import WatermarkLogo from "../../components/media/WatermarkLogo";
 import { useAuth } from "../../context/AuthContext";
 
 const ProfileSection = ({ title, icon: Icon, children }) => (
@@ -106,6 +107,7 @@ const VideoPlayer = ({ url, label }) => {
         <video src={url} controls className="w-full max-h-[300px] object-contain">
           Your browser does not support the video tag.
         </video>
+        <WatermarkLogo position="top-right" size="sm" />
       </div>
     </div>
   );
@@ -129,6 +131,7 @@ const ImageViewer = ({ url, label }) => {
         onClick={() => setOpen(true)}
       >
         <img src={url} alt={label} className="w-full h-40 object-cover transition-transform group-hover:scale-105" />
+        <WatermarkLogo position="top-right" size="sm" />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
           <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
@@ -138,7 +141,10 @@ const ImageViewer = ({ url, label }) => {
           <button className="absolute top-4 right-4 text-white hover:text-white/80 z-10" onClick={() => setOpen(false)}>
             <X className="h-6 w-6" />
           </button>
-          <img src={url} alt={label} className="max-w-full max-h-[90vh] object-contain rounded-lg" onClick={(e) => e.stopPropagation()} />
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            <img src={url} alt={label} className="max-w-full max-h-[90vh] object-contain rounded-lg" />
+            <WatermarkLogo position="bottom-right-lg" size="lg" />
+          </div>
         </div>
       )}
     </div>
@@ -163,6 +169,7 @@ const SlideshowViewer = ({ urls, label }) => {
       <p className="text-xs text-muted-foreground">{label} ({urls.length} image{urls.length !== 1 ? "s" : ""})</p>
       <div className="relative rounded-lg overflow-hidden border group cursor-pointer" onClick={() => setOpen(true)}>
         <img src={urls[current]} alt={`${label} ${current + 1}`} className="w-full h-40 object-cover" />
+        <WatermarkLogo position="top-right" size="sm" />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
           <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
@@ -200,7 +207,10 @@ const SlideshowViewer = ({ urls, label }) => {
           <button className="absolute top-4 right-4 text-white hover:text-white/80 z-10 p-2" onClick={() => setOpen(false)}>
             <X className="h-6 w-6" />
           </button>
-          <img src={urls[current]} alt={label} className="max-w-full max-h-[90vh] object-contain rounded-lg" onClick={(e) => e.stopPropagation()} />
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            <img src={urls[current]} alt={label} className="max-w-full max-h-[90vh] object-contain rounded-lg" />
+            <WatermarkLogo position="bottom-right-lg" size="lg" />
+          </div>
           {urls.length > 1 && (
             <>
               <button className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/20 text-white rounded-full p-3 hover:bg-white/30" onClick={(e) => { e.stopPropagation(); prev(); }}>
@@ -487,6 +497,7 @@ const UserBusinessDetails = ({ publicMode = false }) => {
           ) : (
             <Building2 size={48} />
           )}
+          {heroImage && <WatermarkLogo position="top-right" size="sm" />}
           {hasCoords && (
             <span className="absolute top-3 left-3 z-10 inline-flex items-center gap-1 bg-emerald-600/95 text-white text-[11px] font-extrabold uppercase tracking-wide px-2.5 py-1.5 rounded-full backdrop-blur-sm shadow-sm">
               <BadgeCheck size={13} className="shrink-0" />

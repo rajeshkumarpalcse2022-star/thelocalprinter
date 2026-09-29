@@ -16,6 +16,7 @@ import { Card, CardContent } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import CopyableId from "../admin/CopyableId";
+import WatermarkLogo from "../media/WatermarkLogo";
 
 const SERVICE_TYPE_LABELS = {
   print_only: "Print Only",
@@ -92,6 +93,7 @@ const UserBusinessCard = ({
         ) : (
           <Building2 size={36} />
         )}
+        {image && <WatermarkLogo position="bottom-right" size="sm" />}
         {(isGpsVerified || reviewCount > 0) && (
           <div className="absolute top-2.5 left-2.5 z-10 flex flex-col items-start gap-1.5">
             {isGpsVerified && (

@@ -36,6 +36,7 @@ import {
 import { Badge } from "../../components/ui/badge";
 import { Separator } from "../../components/ui/separator";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import WatermarkLogo from "../../components/media/WatermarkLogo";
 
 const Section = ({ title, icon: Icon, children }) => (
   <div className="space-y-3">
@@ -152,6 +153,7 @@ const VideoPlayer = ({ url, label }) => {
         >
           Your browser does not support the video tag.
         </video>
+        <WatermarkLogo position="top-right" size="sm" />
       </div>
     </div>
   );
@@ -181,6 +183,7 @@ const ImageViewer = ({ url, label }) => {
           alt={label}
           className="w-full h-40 object-cover transition-transform group-hover:scale-105"
         />
+        <WatermarkLogo position="top-right" size="sm" />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
           <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
@@ -196,12 +199,14 @@ const ImageViewer = ({ url, label }) => {
           >
             ✕
           </button>
-          <img
-            src={url}
-            alt={label}
-            className="max-w-full max-h-full object-contain rounded-lg"
-            onClick={(e) => e.stopPropagation()}
-          />
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={url}
+              alt={label}
+              className="max-w-full max-h-full object-contain rounded-lg"
+            />
+            <WatermarkLogo position="bottom-right-lg" size="lg" />
+          </div>
         </div>
       )}
     </div>
