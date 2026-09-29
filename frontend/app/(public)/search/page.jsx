@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import UserBusinessCard from '@/components/user/UserBusinessCard';
 import { searchPublicBusinesses, getPublicFilterOptions, getLocationAutocomplete } from '@/services/userService';
+import { getSavedCity, clearLocation, onSavedLocationChange } from '@/lib/savedLocation';
 
 const RADIUS_OPTIONS = [5, 10, 25, 50];
 const RADIUS_DEFAULT = 5;
@@ -75,10 +76,19 @@ function SearchContent() {
   const [location, setLocation] = useState(searchParams.get('location') || '');
 
   useEffect(() => {
-    const loc = searchParams.get('location') || '';
+    // No explicit location in the URL (footer links, direct open) → fall back
+    // to the saved location so results stay location-aware across refreshes.
+    const loc = searchParams.get('location') || getSavedCity();
     const q = searchParams.get('q') || '';
     setLocation(loc);
     setKeyword(q);
+  }, [searchParams]);
+
+  // Stay in sync with the saved location (e.g. auto re-detect after a clear)
+  // unless the URL pins an explicit location chosen by the visitor.
+  useEffect(() => {
+    if (searchParams.get('location')) return undefined;
+    return onSavedLocationChange(({ city }) => setLocation(city));
   }, [searchParams]);
   const [filterCategory, setFilterCategory] = useState('All Categories');
   const [filterRating, setFilterRating] = useState('Any rating');
@@ -224,6 +234,9 @@ function SearchContent() {
   const clearAllFilters = () => {
     setKeyword('');
     setLocation('');
+    clearLocation();
+    // Drop stale location/q from the URL so it cannot resurrect old filters.
+    router.replace('/search', { scroll: false });
     setFilterCategory('All Categories');
     setFilterService('All services');
     setFilterOrder('All order types');

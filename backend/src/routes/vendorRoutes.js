@@ -10,6 +10,7 @@ const {
   deleteBusiness,
   toggleBusinessStatus,
   getProfile,
+  updateProfile,
   getPackage,
 } = require("../controllers/vendorController");
 const {
@@ -31,6 +32,7 @@ router.put("/businesses/:id", updateBusiness);
 router.delete("/businesses/:id", deleteBusiness);
 router.patch("/businesses/:id/toggle-status", toggleBusinessStatus);
 router.get("/profile", getProfile);
+router.put("/profile", updateProfile);
 router.get("/reviews/summary", getVendorReviewSummary);
 router.get("/reviews", getVendorReviews);
 router.get("/package", getPackage);

@@ -31,9 +31,9 @@ const {
   updateSettings,
   getResellerApplications,
   getResellerApplicationById,
-  updateResellerApplicationStatus,
   deleteResellerApplication,
   updateUserApprovalStatus,
+  updateProfileChangeStatus,
   getPendingApprovalsCount,
 } = require("../controllers/adminController");
 const {
@@ -55,6 +55,7 @@ router.get("/users/:id", getUserById);
 router.put("/users/:id", adminUpdateUser);
 router.patch("/users/:id/toggle-status", toggleUserStatus);
 router.patch("/users/:id/approval-status", updateUserApprovalStatus);
+router.patch("/profile-changes/:id/status", updateProfileChangeStatus);
 router.delete("/users/:id", deleteUser);
 
 router.get("/vendors", getVendors);
@@ -89,7 +90,6 @@ router.put("/settings", updateSettings);
 
 router.get("/reseller-applications", getResellerApplications);
 router.get("/reseller-applications/:id", getResellerApplicationById);
-router.patch("/reseller-applications/:id/status", updateResellerApplicationStatus);
 router.delete("/reseller-applications/:id", deleteResellerApplication);
 
 module.exports = router;

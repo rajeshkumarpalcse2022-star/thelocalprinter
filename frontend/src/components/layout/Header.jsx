@@ -8,6 +8,16 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Menu, X, MapPin, Search, Crosshair, Loader2, LogOut, LayoutDashboard, ChevronDown, ChevronRight, Heart, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { getActiveCategories, getWishlist, getPublicFilterOptions, getLocationAutocomplete } from '@/services/userService';
+import {
+  readSavedLocation,
+  saveLocation,
+  saveManualLocation,
+  isManualLocation,
+  hasGeoAttempt,
+  markGeoAttempt,
+  requestCurrentCity,
+  onSavedLocationChange,
+} from '@/lib/savedLocation';
 
 const MOBILE_LOCATION_DEBOUNCE_MS = 300;
 const MOBILE_LOCATION_LIMIT = 5;
@@ -41,6 +51,9 @@ export default function Header() {
   const mobileCategoriesRef = useRef([]);
   const mobileSearchWrapperRef = useRef(null);
   const profileRef = useRef(null);
+  const locationOriginRef = useRef(`header-${Math.random().toString(36).slice(2)}`);
+  const locationPersistRef = useRef(null);
+  const locationInputRef = useRef('');
   const [wishlistCount, setWishlistCount] = useState(0);
 
   useEffect(() => {
@@ -94,6 +107,7 @@ export default function Header() {
     return () => {
       if (mobileLocationDebounceRef.current) clearTimeout(mobileLocationDebounceRef.current);
       if (mobileLocationAbortRef.current) mobileLocationAbortRef.current.abort();
+      if (locationPersistRef.current) clearTimeout(locationPersistRef.current);
     };
   }, []);
 
@@ -106,11 +120,59 @@ export default function Header() {
         mobileLocationMetaRef.current = null;
         setShowMobileLocationSuggestions(false);
         setMobileLocationSuggestions([]);
+        saveLocation(city, { source: 'near_me' }, locationOriginRef.current);
       }
     };
     window.addEventListener('near-me-location', onNearMeLocation);
     return () => window.removeEventListener('near-me-location', onNearMeLocation);
   }, []);
+
+  // Detect once from the browser when no saved location exists (first visit,
+  // or after the visitor cleared it). Marked before asking so a remount never
+  // re-prompts.
+  const runAutoDetect = useCallback(() => {
+    if (isManualLocation() || hasGeoAttempt()) return;
+    markGeoAttempt();
+    setIsLocating(true);
+    requestCurrentCity().then((city) => {
+      setIsLocating(false);
+      // Never fight the visitor: skip if they typed or saved something meanwhile.
+      if (!city || isManualLocation() || readSavedLocation()?.city || locationInputRef.current.trim()) return;
+      setLocationInput(city);
+      saveLocation(city, { source: 'auto' }, locationOriginRef.current);
+    });
+  }, []);
+
+  // Mirror of the location field so async detect results never clobber typing.
+  useEffect(() => {
+    locationInputRef.current = locationInput;
+  }, [locationInput]);
+
+  // Restore the saved location (survives refresh); first visit detects it.
+  useEffect(() => {
+    const saved = readSavedLocation();
+    if (saved?.city) {
+      setLocationInput(saved.city);
+      return undefined;
+    }
+    runAutoDetect();
+    return () => setIsLocating(false);
+  }, [runAutoDetect]);
+
+  // Keep the mobile field in sync when the desktop field (or another tab)
+  // changes it — and re-detect when the visitor cleared the location.
+  useEffect(() => {
+    const off = onSavedLocationChange(({ city, origin, reset }) => {
+      if (origin !== locationOriginRef.current) {
+        setLocationInput(city);
+        mobileLocationMetaRef.current = null;
+        setShowMobileLocationSuggestions(false);
+        setMobileLocationSuggestions([]);
+      }
+      if (reset) runAutoDetect();
+    });
+    return off;
+  }, [runAutoDetect]);
 
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
@@ -134,6 +196,7 @@ export default function Header() {
           
           if (city) {
             setLocationInput(city);
+            saveLocation(city, { source: 'near_me', lat: latitude, lng: longitude }, locationOriginRef.current);
           } else {
             setLocationInput('Location Found');
           }
@@ -146,6 +209,7 @@ export default function Header() {
       },
       (error) => {
         setIsLocating(false);
+        markGeoAttempt();
         alert('Location access denied. Please type your city.');
       }
     );
@@ -198,6 +262,10 @@ export default function Header() {
     mobileLocationMetaRef.current = null;
     setMobileLocationSelectedIndex(-1);
     fetchMobileLocationSuggestions(val);
+    if (locationPersistRef.current) clearTimeout(locationPersistRef.current);
+    locationPersistRef.current = setTimeout(() => {
+      saveManualLocation(val, locationOriginRef.current);
+    }, 600);
   };
 
   const handleMobileLocationSuggestionClick = (suggestion) => {
@@ -209,6 +277,7 @@ export default function Header() {
     setMobileLocationSuggestions([]);
     setMobileLocationSelectedIndex(-1);
     setIsMobileLocationLoading(false);
+    saveManualLocation(suggestion.displayName, locationOriginRef.current);
   };
 
   const handleMobileLocationKeyDown = (e) => {

@@ -377,7 +377,7 @@ const Signup = () => {
     <div className="space-y-3">
       <h3 className="font-semibold text-foreground">Reseller Application</h3>
       <div className="flex items-center gap-2 p-2.5 rounded-lg bg-orange-500/10 text-orange-600 text-xs">
-        <Shield size={14} className="flex-shrink-0" /> Reseller applications require manual approval by admin.
+        <Shield size={14} className="flex-shrink-0" /> Your reseller account is activated instantly. No admin approval needed.
       </div>
       {[
         { field: "companyName", label: "Company Name *", icon: Building2, placeholder: "Enter company name" },

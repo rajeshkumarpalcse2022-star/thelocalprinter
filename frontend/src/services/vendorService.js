@@ -42,6 +42,11 @@ export const getVendorProfile = async () => {
   return response.data;
 };
 
+export const updateVendorProfile = async (profileData) => {
+  const response = await api.put("/vendor/profile", profileData);
+  return response.data;
+};
+
 export const getVendorReviews = async (params = {}) => {
   const response = await api.get("/vendor/reviews", { params });
   return response.data;

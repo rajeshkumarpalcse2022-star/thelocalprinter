@@ -8,7 +8,6 @@ import {
   CheckCircle,
   XCircle,
   Store,
-  UserCheck,
   Loader2,
 } from "lucide-react";
 import {
@@ -151,7 +150,6 @@ const AdminDashboard = () => {
         <StatCard icon={Store} label="Total Vendors" value={stats.totalVendors} color="#f97316" />
         <StatCard icon={Building2} label="Total Businesses" value={stats.totalBusinesses} color="#8b5cf6" />
         <StatCard icon={Clock} label="Pending Approvals" value={stats.pendingBusinesses} color="#d97706" />
-        <StatCard icon={UserCheck} label="Pending Resellers" value={stats.pendingResellers || 0} color="#8b5cf6" />
         <StatCard icon={CheckCircle} label="Active Businesses" value={stats.activeBusinesses} color="#16a34a" />
         <StatCard icon={XCircle} label="Rejected" value={stats.inactiveBusinesses} color="#dc2626" />
       </div>

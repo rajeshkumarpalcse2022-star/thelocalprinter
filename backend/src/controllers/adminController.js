@@ -1,9 +1,11 @@
+const mongoose = require("mongoose");
 const User = require("../models/User");
 const Business = require("../models/Business");
 const Category = require("../models/Category");
 const Settings = require("../models/Settings");
 const ResellerApplication = require("../models/ResellerApplication");
 const { ROLES } = require("../utils/constants");
+const { applyBusinessPatch } = require("../utils/businessPatch");
 
 // ─── Dashboard ───
 
@@ -16,7 +18,6 @@ exports.getDashboardStats = async (req, res) => {
       pendingBusinesses,
       activeBusinesses,
       inactiveBusinesses,
-      pendingResellers,
       recentUsers,
       recentVendors,
       recentBusinesses,
@@ -27,7 +28,6 @@ exports.getDashboardStats = async (req, res) => {
       Business.countDocuments({ status: "pending" }),
       Business.countDocuments({ status: "approved", isActive: true }),
       Business.countDocuments({ status: "rejected" }),
-      ResellerApplication.countDocuments({ status: "PENDING" }),
       User.find({ role: ROLES.USER })
         .sort({ createdAt: -1 })
         .limit(5)
@@ -53,7 +53,6 @@ exports.getDashboardStats = async (req, res) => {
           pendingBusinesses,
           activeBusinesses,
           inactiveBusinesses,
-          pendingResellers,
         },
         recentUsers,
         recentVendors,
@@ -171,7 +170,7 @@ exports.getVendors = async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .select("fullName email phone role publicId isActive createdAt"),
+        .select("fullName email phone role publicId isActive createdAt approvalStatus"),
       User.countDocuments(query),
     ]);
 
@@ -289,11 +288,23 @@ exports.getBusinesses = async (req, res) => {
     const skip = (page - 1) * limit;
     const search = req.query.search || "";
     const status = req.query.status || "";
+    const vendor = req.query.vendor || "";
 
     // Business-centric query: each row = one business
     const query = {};
     if (status) {
       query.status = status;
+    }
+
+    // Filter by owning vendor (used by the vendor business count drill-down)
+    if (vendor) {
+      if (!mongoose.isValidObjectId(vendor)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid vendor id",
+        });
+      }
+      query.vendor = vendor;
     }
 
     // Search by business name, vendor name, vendor email, or vendor publicId
@@ -537,22 +548,37 @@ exports.getPendingApprovals = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const query = { status: "pending" };
+    // New business registrations + vendor changes awaiting review
+    const query = {
+      $or: [
+        { status: "pending" },
+        { "pendingChange.type": { $in: ["EDIT", "DELETE"] } },
+      ],
+    };
 
-    const [businesses, total] = await Promise.all([
+    const [businesses, total, profileChanges] = await Promise.all([
       Business.find(query)
-        .sort({ createdAt: -1 })
+        .sort({ "pendingChange.submittedAt": -1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .populate("vendor", "fullName email")
-        .select("name description city status isActive createdAt vendor"),
+        .select(
+          "name description city status isActive createdAt vendor pendingChange"
+        ),
       Business.countDocuments(query),
+      User.find({ role: ROLES.VENDOR, pendingProfileChange: { $ne: null } })
+        .sort({ "pendingProfileChange.submittedAt": -1 })
+        .limit(50)
+        .select(
+          "fullName email publicId pendingProfileChange createdAt updatedAt"
+        ),
     ]);
 
     res.status(200).json({
       success: true,
       data: {
         businesses,
+        profileChanges: profileChanges || [],
         pagination: {
           page,
           limit,
@@ -581,21 +607,13 @@ exports.updateBusinessStatus = async (req, res) => {
       });
     }
 
-    let business = await Business.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true }
-    ).populate("vendor", "fullName email");
+    let business = await Business.findById(id);
 
     // If not found as a Business ID, try as a User ID → find their business
     if (!business) {
       const user = await User.findById(id);
       if (user) {
-        business = await Business.findOneAndUpdate(
-          { vendor: user._id },
-          { status },
-          { new: true }
-        ).populate("vendor", "fullName email");
+        business = await Business.findOne({ vendor: user._id });
       }
     }
 
@@ -606,9 +624,52 @@ exports.updateBusinessStatus = async (req, res) => {
       });
     }
 
+    const pendingChange = business.pendingChange;
+    const hasPendingChange =
+      !!pendingChange && (pendingChange.type === "EDIT" || pendingChange.type === "DELETE");
+    const wasApproved = business.status === "approved";
+    let message = `Business ${status}`;
+
+    if (status === "approved") {
+      if (hasPendingChange && pendingChange.type === "DELETE") {
+        await Business.findByIdAndDelete(business._id);
+        return res.status(200).json({
+          success: true,
+          message: "Business delete request approved. Business deleted.",
+          data: { business: null, deleted: true },
+        });
+      }
+
+      if (hasPendingChange) {
+        applyBusinessPatch(business, pendingChange.data || {});
+        if (pendingChange.data && pendingChange.data.isActive !== undefined) {
+          business.isActive = pendingChange.data.isActive;
+        }
+        business.pendingChange = null;
+        message = "Business changes approved and published";
+      }
+
+      if (business.status !== "approved") {
+        business.status = "approved";
+        if (!hasPendingChange) message = "Business approved";
+      }
+    } else {
+      // rejected
+      business.pendingChange = null;
+      if (!wasApproved) {
+        business.status = "rejected";
+        message = "Business rejected";
+      } else {
+        message = "Changes rejected. The published listing stays unchanged.";
+      }
+    }
+
+    await business.save();
+    await business.populate("vendor", "fullName email");
+
     res.status(200).json({
       success: true,
-      message: `Business ${status}`,
+      message,
       data: { business },
     });
   } catch (error) {
@@ -710,6 +771,9 @@ exports.adminUpdateUser = async (req, res) => {
     if (data.isActive !== undefined && existingUser.role !== ROLES.ADMIN) {
       update.isActive = data.isActive;
     }
+
+    // Admin edits win over any vendor submitted profile change.
+    update.pendingProfileChange = null;
 
     const user = await User.findByIdAndUpdate(id, update, { new: true, runValidators: true });
 
@@ -1312,51 +1376,6 @@ exports.getResellerApplicationById = async (req, res) => {
   }
 };
 
-exports.updateResellerApplicationStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, rejectionReason } = req.body;
-
-    if (!["APPROVED", "REJECTED"].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Status must be APPROVED or REJECTED",
-      });
-    }
-
-    const application = await ResellerApplication.findByIdAndUpdate(
-      id,
-      {
-        status,
-        rejectionReason: status === "REJECTED" ? rejectionReason || "" : "",
-      },
-      { new: true }
-    ).populate("user", "fullName email phone whatsappNumber publicId");
-
-    if (!application) {
-      return res.status(404).json({
-        success: false,
-        message: "Reseller application not found",
-      });
-    }
-
-    await User.findByIdAndUpdate(application.user._id, {
-      resellerApprovalStatus: status,
-    });
-
-    res.status(200).json({
-      success: true,
-      message: `Reseller application ${status.toLowerCase()}`,
-      data: { application },
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Server error updating reseller application status",
-    });
-  }
-};
-
 exports.deleteResellerApplication = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1401,8 +1420,6 @@ exports.updateUserApprovalStatus = async (req, res) => {
       });
     }
 
-    const updateData = { approvalStatus: status };
-
     const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({
@@ -1411,18 +1428,15 @@ exports.updateUserApprovalStatus = async (req, res) => {
       });
     }
 
-    if (user.registrationType === "RESELLER") {
-      const resellerStatus = status === "approved" ? "APPROVED" : "REJECTED";
-      updateData.resellerApprovalStatus = resellerStatus;
-
-      await ResellerApplication.findOneAndUpdate(
-        { user: id },
-        {
-          status: resellerStatus,
-          rejectionReason: status === "rejected" ? "Rejected by admin" : "",
-        }
-      );
+    // Approval is a vendor-only gate. Users and resellers never need admin approval.
+    if (user.role !== "VENDOR") {
+      return res.status(400).json({
+        success: false,
+        message: "Approval is only available for vendor accounts",
+      });
     }
+
+    const updateData = { approvalStatus: status };
 
     const updatedUser = await User.findByIdAndUpdate(
       id,
@@ -1432,7 +1446,7 @@ exports.updateUserApprovalStatus = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: `User ${status}`,
+      message: `Vendor account ${status}`,
       data: { user: updatedUser },
     });
   } catch (error) {
@@ -1440,6 +1454,78 @@ exports.updateUserApprovalStatus = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error updating user approval status",
+    });
+  }
+};
+
+// ─── Vendor Profile Change Approval ───
+
+exports.updateProfileChangeStatus = async (req, res) => {
+  try {
+    const { status } = req.body;
+    const { id } = req.params;
+
+    if (!["approved", "rejected"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Status must be approved or rejected",
+      });
+    }
+
+    const user = await User.findById(id);
+    if (!user || user.role !== ROLES.VENDOR) {
+      return res.status(404).json({
+        success: false,
+        message: "Vendor not found",
+      });
+    }
+
+    if (!user.pendingProfileChange) {
+      return res.status(404).json({
+        success: false,
+        message: "No pending profile change for this vendor",
+      });
+    }
+
+    if (status === "approved") {
+      const change = user.pendingProfileChange;
+      const update = { pendingProfileChange: null };
+
+      if (change.fullName) update.fullName = change.fullName;
+      if (change.phone !== undefined && change.phone !== null) update.phone = change.phone;
+      if (change.whatsappNumber !== undefined && change.whatsappNumber !== null) {
+        update.whatsappNumber = change.whatsappNumber;
+      }
+
+      const updatedUser = await User.findByIdAndUpdate(id, update, { new: true }).select(
+        "fullName email phone whatsappNumber role publicId pendingProfileChange"
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: "Profile change approved and applied",
+        data: { user: updatedUser },
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { pendingProfileChange: null },
+      { new: true }
+    ).select(
+      "fullName email phone whatsappNumber role publicId pendingProfileChange"
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Profile change rejected",
+      data: { user: updatedUser },
+    });
+  } catch (error) {
+    console.error("updateProfileChangeStatus error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error updating profile change status",
     });
   }
 };
@@ -1579,17 +1665,27 @@ exports.getBusinessStatusCounts = async (req, res) => {
 
 exports.getPendingApprovalsCount = async (req, res) => {
   try {
-    const [pendingBusinesses, pendingUsers] = await Promise.all([
-      Business.countDocuments({ status: "pending" }),
-      User.countDocuments({ approvalStatus: "pending" }),
-    ]);
+    const [pendingBusinesses, pendingChanges, profileChanges] =
+      await Promise.all([
+        Business.countDocuments({ status: "pending" }),
+        Business.countDocuments({
+          "pendingChange.type": { $in: ["EDIT", "DELETE"] },
+        }),
+        User.countDocuments({
+          role: ROLES.VENDOR,
+          pendingProfileChange: { $ne: null },
+        }),
+      ]);
+
+    const total = pendingBusinesses + pendingChanges + profileChanges;
 
     res.status(200).json({
       success: true,
       data: {
-        total: pendingBusinesses + pendingUsers,
+        total,
         businesses: pendingBusinesses,
-        users: pendingUsers,
+        changes: pendingChanges,
+        profileChanges,
       },
     });
   } catch (error) {

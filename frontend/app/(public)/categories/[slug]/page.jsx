@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import BusinessCard from '@/components/directory/BusinessCard';
 import { ChevronRight, Layers, Store, Search, Sun, Moon } from 'lucide-react';
 import { getActiveCategories } from '@/services/userService';
+import { getSavedCity, onSavedLocationChange } from '@/lib/savedLocation';
 import api from '@/services/api';
 
 export default function CategoryPage({ params }) {
@@ -15,6 +16,7 @@ export default function CategoryPage({ params }) {
   const [loading, setLoading] = useState(true);
   const [bizLoading, setBizLoading] = useState(true);
   const [theme, setTheme] = useState('light');
+  const [savedCity, setSavedCity] = useState('');
 
   useEffect(() => {
     const saved = localStorage.getItem('lp-theme');
@@ -38,14 +40,23 @@ export default function CategoryPage({ params }) {
 
   const parentCategory = categories.find((c) => c.slug === slug);
 
+  // Listings follow the saved location (auto-detected or typed by the visitor)
+  // and refetch whenever it changes.
+  useEffect(() => {
+    setSavedCity(getSavedCity());
+    return onSavedLocationChange(({ city }) => setSavedCity(city));
+  }, []);
+
   useEffect(() => {
     if (!parentCategory?._id) return;
     setBizLoading(true);
-    api.get(`/user/public/businesses`, { params: { categoryId: parentCategory._id, limit: 12 } })
+    const params = { categoryId: parentCategory._id, limit: 12 };
+    if (savedCity) params.city = savedCity;
+    api.get(`/user/public/businesses`, { params })
       .then((res) => setBusinesses(res.data?.data?.businesses || []))
       .catch(() => setBusinesses([]))
       .finally(() => setBizLoading(false));
-  }, [parentCategory?._id]);
+  }, [parentCategory?._id, savedCity]);
 
   if (!loading && !parentCategory) {
     return (
@@ -228,6 +239,11 @@ export default function CategoryPage({ params }) {
                 {businesses.length}
               </span>
             )}
+            {!bizLoading && savedCity && (
+              <span className={`text-[12px] font-semibold px-2.5 py-0.5 rounded-full ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-slate-100 text-brand-navy'}`}>
+                in {savedCity}
+              </span>
+            )}
           </div>
 
           {bizLoading ? (
@@ -244,7 +260,11 @@ export default function CategoryPage({ params }) {
             <div className={`flex flex-col items-center justify-center py-20 rounded-2xl border shadow-sm ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-brand-border'}`}>
               <img src="/data-not-found.png" alt="No Data Found" className="mb-4 h-48 w-48 object-contain" />
               <h3 className={`mb-1 text-base font-semibold ${isDark ? 'text-gray-200' : 'text-brand-navy'}`}>No Data Found in Database</h3>
-              <p className="max-w-xs text-sm text-center text-brand-muted">No businesses found in this category yet. Check back soon!</p>
+              <p className="max-w-xs text-sm text-center text-brand-muted">
+                {savedCity
+                  ? `No businesses found in this category in ${savedCity} yet. Change your location from the search bar above.`
+                  : 'No businesses found in this category yet. Check back soon!'}
+              </p>
             </div>
           )}
         </motion.section>

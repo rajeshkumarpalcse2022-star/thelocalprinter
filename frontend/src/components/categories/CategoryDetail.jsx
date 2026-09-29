@@ -4,7 +4,9 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { ChevronRight, ChevronLeft, Sun, Moon } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Sun, Moon, Plus, Trash2, Loader2 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { getGuideRows, addGuideRow, deleteGuideRow } from '@/services/guideService';
 
 function useLPTheme() {
   const [theme, setTheme] = useState('light');
@@ -87,7 +89,82 @@ function Reveal({ children, delay = 0 }) {
 
 export default function CategoryDetail({ content }) {
   const router = useRouter();
+  const { user } = useAuth();
   const { isDark, toggle } = useLPTheme();
+
+  const isAdmin = user?.role === 'ADMIN';
+  const columns = content.columns || [];
+  const [guideRows, setGuideRows] = useState([]);
+  const [showAddRow, setShowAddRow] = useState(false);
+  const [featureInput, setFeatureInput] = useState('');
+  const [valueInputs, setValueInputs] = useState({});
+  const [savingRow, setSavingRow] = useState(false);
+  const [deletingRow, setDeletingRow] = useState(null);
+  const [rowError, setRowError] = useState('');
+
+  const isComparison = content.type === 'comparison';
+  const allRows = [...(content.rows || []), ...guideRows];
+
+  useEffect(() => {
+    if (!isComparison || !content.slug) return undefined;
+    let cancelled = false;
+    getGuideRows(content.slug)
+      .then((res) => {
+        if (!cancelled) setGuideRows(res?.data?.rows || []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isComparison, content.slug]);
+
+  // "Excellent" typed by an admin is rendered with a star automatically.
+  const formatCellValue = (value) => {
+    const text = (value ?? '').toString().trim();
+    if (!text) return '';
+    return /^excellent$/i.test(text) ? `\u2b50 ${text}` : text;
+  };
+
+  const resetAddRow = () => {
+    setFeatureInput('');
+    setValueInputs({});
+    setRowError('');
+    setShowAddRow(false);
+  };
+
+  const handleAddRow = async () => {
+    const feature = featureInput.trim();
+    if (!feature) {
+      setRowError('Feature name is required');
+      return;
+    }
+    const values = columns.slice(1).map((col) => (valueInputs[col] || '').trim());
+    setSavingRow(true);
+    setRowError('');
+    try {
+      const res = await addGuideRow(content.slug, { feature, values });
+      const row = res?.data?.row;
+      if (row) setGuideRows((prev) => [...prev, row]);
+      resetAddRow();
+    } catch (err) {
+      setRowError(err.response?.data?.message || 'Failed to add row');
+    } finally {
+      setSavingRow(false);
+    }
+  };
+
+  const handleDeleteRow = async (id) => {
+    setDeletingRow(id);
+    setRowError('');
+    try {
+      await deleteGuideRow(content.slug, id);
+      setGuideRows((prev) => prev.filter((r) => r._id !== id));
+    } catch (err) {
+      setRowError(err.response?.data?.message || 'Failed to delete row');
+    } finally {
+      setDeletingRow(null);
+    }
+  };
 
   const goBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) router.back();
@@ -178,9 +255,9 @@ export default function CategoryDetail({ content }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {content.rows.map((row, ri) => (
+                    {allRows.map((row, ri) => (
                       <tr
-                        key={row.feature}
+                        key={row._id ? `custom-${row._id}` : `base-${row.feature || ri}`}
                         className={`border-t ${isDark ? 'border-gray-800' : 'border-brand-border'} ${
                           ri % 2 === 1 ? (isDark ? 'bg-gray-800/30' : 'bg-brand-light/50') : ''
                         }`}
@@ -190,14 +267,32 @@ export default function CategoryDetail({ content }) {
                             isDark ? 'text-gray-100 bg-gray-900' : 'text-brand-navy bg-white'
                           } ${ri % 2 === 1 ? (isDark ? '!bg-gray-800' : '!bg-[#F1F3F6]') : ''}`}
                         >
-                          {row.feature}
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 break-words">{row.feature}</span>
+                            {isAdmin && row._id && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteRow(row._id)}
+                                disabled={deletingRow === row._id}
+                                title="Delete this row"
+                                aria-label={`Delete ${row.feature}`}
+                                className="shrink-0 rounded-lg p-1.5 text-red-500/70 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                              >
+                                {deletingRow === row._id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            )}
+                          </span>
                         </th>
-                        {row.values.map((val, vi) => (
+                        {columns.slice(1).map((col, vi) => (
                           <td
-                            key={vi}
+                            key={col}
                             className={`px-4 py-3 text-[13.5px] break-words ${isDark ? 'text-gray-300' : 'text-brand-muted'}`}
                           >
-                            {val}
+                            {formatCellValue((row.values || [])[vi])}
                           </td>
                         ))}
                       </tr>
@@ -205,6 +300,102 @@ export default function CategoryDetail({ content }) {
                   </tbody>
                 </table>
               </div>
+
+              {/* Admin only — add / manage guide rows */}
+              {isAdmin && (
+                <div
+                  className={`mt-4 rounded-2xl border p-4 ${
+                    isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-brand-border'
+                  }`}
+                >
+                  {!showAddRow ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddRow(true);
+                        setRowError('');
+                      }}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-orange px-4 py-3 text-[14px] font-bold text-white transition-colors hover:bg-brand-orange/90 sm:w-auto"
+                    >
+                      <Plus className="h-4 w-4" /> Add Row
+                    </button>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      <p
+                        className={`text-[13px] font-semibold ${
+                          isDark ? 'text-gray-300' : 'text-brand-navy'
+                        }`}
+                      >
+                        New comparison row
+                      </p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <input
+                          type="text"
+                          value={featureInput}
+                          onChange={(e) => setFeatureInput(e.target.value)}
+                          placeholder="Feature name"
+                          className={`w-full rounded-xl border px-3 py-2.5 text-[14px] outline-none transition-colors focus:border-brand-orange ${
+                            isDark
+                              ? 'bg-gray-800 border-gray-700 text-gray-100 placeholder:text-gray-500'
+                              : 'bg-white border-brand-border text-brand-navy placeholder:text-gray-400'
+                          }`}
+                        />
+                        {columns.slice(1).map((col) => (
+                          <input
+                            key={col}
+                            type="text"
+                            value={valueInputs[col] || ''}
+                            onChange={(e) =>
+                              setValueInputs((prev) => ({ ...prev, [col]: e.target.value }))
+                            }
+                            placeholder={col}
+                            className={`w-full rounded-xl border px-3 py-2.5 text-[14px] outline-none transition-colors focus:border-brand-orange ${
+                              isDark
+                                ? 'bg-gray-800 border-gray-700 text-gray-100 placeholder:text-gray-500'
+                                : 'bg-white border-brand-border text-brand-navy placeholder:text-gray-400'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      {rowError && <p className="text-[13px] font-medium text-red-500">{rowError}</p>}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleAddRow}
+                          disabled={savingRow}
+                          className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-4 py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-brand-orange/90 disabled:opacity-60"
+                        >
+                          {savingRow ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Plus className="h-4 w-4" />
+                          )}
+                          {savingRow ? 'Adding...' : 'Add Row'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={resetAddRow}
+                          className={`rounded-xl border px-4 py-2.5 text-[14px] font-bold transition-colors ${
+                            isDark
+                              ? 'border-gray-700 text-gray-300 hover:bg-gray-800'
+                              : 'border-brand-border text-brand-navy hover:bg-brand-light'
+                          }`}
+                        >
+                          Cancel
+                        </button>
+                        <span
+                          className={`text-[12px] leading-relaxed ${
+                            isDark ? 'text-gray-500' : 'text-brand-muted'
+                          }`}
+                        >
+                          Type &ldquo;Excellent&rdquo; to add &#11088; automatically. Add as many
+                          rows as you need.
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </Reveal>
           </div>
         );

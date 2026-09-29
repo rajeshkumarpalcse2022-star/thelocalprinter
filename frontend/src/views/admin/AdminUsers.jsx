@@ -6,8 +6,6 @@ import {
   Trash2,
   Eye,
   Pencil,
-  CheckCircle,
-  XCircle,
   Loader2,
   MoreHorizontal,
   Users,
@@ -24,7 +22,6 @@ import {
   getUsers,
   toggleUserStatus,
   deleteUser,
-  updateUserApprovalStatus,
 } from "../../services/adminService";
 import { PageHeader } from "../../components/shared/page-header";
 import { StatusBadge } from "../../components/shared/status-badge";
@@ -84,8 +81,6 @@ const AdminUsers = () => {
   const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [confirmAction, setConfirmAction] = useState(null);
-  const [confirmLoading, setConfirmLoading] = useState(false);
   const [viewTarget, setViewTarget] = useState(null);
   const [viewLoading, setViewLoading] = useState(false);
   const debounceRef = useRef(null);
@@ -140,33 +135,6 @@ const AdminUsers = () => {
     }
   };
 
-  const handleApproveReject = async () => {
-    if (!confirmAction) return;
-    try {
-      setConfirmLoading(true);
-      setError("");
-      const { user, action } = confirmAction;
-      const newStatus = action === "approve" ? "approved" : "rejected";
-      const res = await updateUserApprovalStatus(user._id, newStatus);
-      setUsers((prev) =>
-        prev.map((u) =>
-          u._id === user._id
-            ? {
-                ...u,
-                approvalStatus: res.data.user.approvalStatus,
-                resellerApprovalStatus: res.data.user.resellerApprovalStatus,
-              }
-            : u
-        )
-      );
-      setConfirmAction(null);
-    } catch (err) {
-      setError(err.response?.data?.message || "Failed to update status");
-    } finally {
-      setConfirmLoading(false);
-    }
-  };
-
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
     try {
@@ -198,8 +166,7 @@ const AdminUsers = () => {
       .slice(0, 2);
   };
 
-  const isPending = (u) => u.approvalStatus === "pending" || u.approvalStatus === null;
-  const getEffectiveStatus = (u) => u.approvalStatus || "pending";
+  const getEffectiveStatus = (u) => u.approvalStatus || "approved";
 
   return (
     <div className="space-y-6">
@@ -321,27 +288,6 @@ const AdminUsers = () => {
                               <Eye className="mr-2 h-4 w-4" />
                               View
                             </DropdownMenuItem>
-                            {isPending(u) && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-emerald-600 focus:text-emerald-600"
-                                  onClick={() => setConfirmAction({ user: u, action: "approve" })}
-                                  disabled={actionLoading === u._id}
-                                >
-                                  <CheckCircle className="mr-2 h-4 w-4" />
-                                  Approve
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="text-destructive focus:text-destructive"
-                                  onClick={() => setConfirmAction({ user: u, action: "reject" })}
-                                  disabled={actionLoading === u._id}
-                                >
-                                  <XCircle className="mr-2 h-4 w-4" />
-                                  Reject
-                                </DropdownMenuItem>
-                              </>
-                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               onClick={() => handleToggle(u._id)}
@@ -549,39 +495,6 @@ const AdminUsers = () => {
               )}
             </div>
           </ScrollArea>
-        </DialogContent>
-      </Dialog>
-
-      {/* Approve/Reject Dialog */}
-      <Dialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {confirmAction?.action === "approve" ? "Approve User" : "Reject User"}
-            </DialogTitle>
-            <DialogDescription>
-              {confirmAction?.action === "approve"
-                ? `Are you sure you want to approve "${confirmAction?.user?.fullName}"?`
-                : `Are you sure you want to reject "${confirmAction?.user?.fullName}"?`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setConfirmAction(null)}
-              disabled={confirmLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant={confirmAction?.action === "approve" ? "default" : "destructive"}
-              onClick={handleApproveReject}
-              disabled={confirmLoading}
-            >
-              {confirmLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {confirmAction?.action === "approve" ? "Approve" : "Reject"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

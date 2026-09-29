@@ -31,7 +31,8 @@ const authenticateUser = async (req, res, next) => {
       });
     }
 
-    if (user.role !== "ADMIN" && user.approvalStatus === "pending") {
+    // Only vendors are held for admin approval. Users are always free to use the app.
+    if (user.role === "VENDOR" && user.approvalStatus === "pending") {
       return res.status(403).json({
         success: false,
         message: "Account is pending approval. Please wait for admin approval.",

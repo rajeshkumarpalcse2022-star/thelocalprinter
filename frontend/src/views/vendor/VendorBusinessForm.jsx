@@ -263,6 +263,7 @@ const VendorBusinessForm = () => {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [pendingChangeAt, setPendingChangeAt] = useState(null);
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoError, setGeoError] = useState("");
   const [locationUsed, setLocationUsed] = useState(false);
@@ -290,7 +291,14 @@ const VendorBusinessForm = () => {
       const fetchBusiness = async () => {
         try {
           const res = await getBusinessById(id);
-          const b = res.data.business;
+          const raw = res.data.business;
+          const pendingData =
+            raw.pendingChange && raw.pendingChange.type === "EDIT" && raw.pendingChange.data
+              ? raw.pendingChange.data
+              : null;
+          setPendingChangeAt(pendingData ? raw.pendingChange.submittedAt : null);
+          // Show the submitted (awaiting approval) values when they exist.
+          const b = pendingData ? { ...raw, ...pendingData } : raw;
           setForm({
             name: b.name || "", description: b.description || "",
             establishedYear: b.establishedYear || "", workingHours: (() => {
@@ -578,11 +586,11 @@ const VendorBusinessForm = () => {
               <Check size={32} />
             </div>
             <h2 className="text-xl font-bold text-foreground mb-2">
-              {isEdit ? "Business Updated!" : "Business Details Submitted Successfully"}
+              {isEdit ? "Changes Submitted for Approval" : "Business Details Submitted Successfully"}
             </h2>
             <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
               {isEdit
-                ? "Your business has been updated successfully."
+                ? "Your changes have been submitted for admin approval. Your current listing stays live with the existing data until approved."
                 : "Your business details have been submitted successfully. Your business is currently waiting for Admin approval."}
             </p>
             <div className="flex gap-3 justify-center flex-wrap">
@@ -1466,9 +1474,20 @@ const VendorBusinessForm = () => {
         </button>
         <h1 className="text-2xl font-bold text-foreground">{isEdit ? "Edit Business" : "Register New Business"}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {isEdit ? "Update your business information" : "Fill in the details to list your printing business"}
+          {isEdit ? "Update your business information. Changes go live only after admin approval." : "Fill in the details to list your printing business"}
         </p>
       </div>
+
+      {isEdit && pendingChangeAt && (
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm mb-6 border border-amber-500/30">
+          <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+          <span>
+            You have changes submitted on{" "}
+            {new Date(pendingChangeAt).toLocaleString()} that are waiting for admin approval.
+            The public listing still shows the previously approved version.
+          </span>
+        </div>
+      )}
 
       <div className="flex items-center justify-between mb-6 overflow-x-auto pb-2">
         {STEPS.map((s, i) => {
@@ -1529,7 +1548,7 @@ const VendorBusinessForm = () => {
       {saveSuccess && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/10 text-emerald-600 text-sm mb-4">
           <Check size={16} className="flex-shrink-0" />
-          <span className="flex-1">Changes saved successfully.</span>
+          <span className="flex-1">Changes submitted for admin approval. Your current listing stays live until approved.</span>
           <button onClick={() => setSaveSuccess(false)} className="hover:opacity-70"><X size={14} /></button>
         </div>
       )}
@@ -1542,7 +1561,7 @@ const VendorBusinessForm = () => {
         <div className="flex items-center gap-2">
           {isEdit && (
             <Button onClick={handleSaveChanges} disabled={saving} variant="outline" className="gap-2">
-              {saving ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <><Check size={16} /> Save Changes</>}
+              {saving ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <><Check size={16} /> Submit for Approval</>}
             </Button>
           )}
           {step < STEPS.length - 1 ? (
@@ -1551,7 +1570,7 @@ const VendorBusinessForm = () => {
             </Button>
           ) : (
             <Button onClick={handleSubmit} disabled={saving} className="gap-2">
-              {saving ? <><Loader2 size={16} className="animate-spin" /> Submitting...</> : <><Check size={16} /> {isEdit ? "Update Business" : "Submit Business"}</>}
+              {saving ? <><Loader2 size={16} className="animate-spin" /> Submitting...</> : <><Check size={16} /> {isEdit ? "Submit Changes" : "Submit Business"}</>}
             </Button>
           )}
         </div>

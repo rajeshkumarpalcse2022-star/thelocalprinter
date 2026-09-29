@@ -4,9 +4,15 @@ import { MapPin, Search, ChevronRight, AlertCircle, Loader2 } from 'lucide-react
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { getActiveCategories, getPublicFilterOptions, getLocationAutocomplete } from '@/services/userService';
+import {
+  readSavedLocation,
+  saveManualLocation,
+  onSavedLocationChange,
+} from '@/lib/savedLocation';
 
 const LOCATION_DEBOUNCE_MS = 300;
 const LOCATION_LIMIT = 5;
+const LOCATION_PERSIST_MS = 600;
 
 export default function SearchBar() {
   const router = useRouter();
@@ -35,6 +41,29 @@ export default function SearchBar() {
   const locationDebounceRef = useRef(null);
   const locationAbortRef = useRef(null);
   const locationRequestIdRef = useRef(0);
+  const locationOriginRef = useRef(`searchbar-${Math.random().toString(36).slice(2)}`);
+  const locationPersistRef = useRef(null);
+
+  // Start from the saved location (auto-detected or typed earlier) so it
+  // survives page refreshes.
+  useEffect(() => {
+    const saved = readSavedLocation();
+    if (saved?.city) {
+      setLocation(saved.city);
+      locationMetaRef.current = null;
+    }
+    const off = onSavedLocationChange(({ city, origin }) => {
+      if (origin === locationOriginRef.current) return;
+      setLocation((prev) => (prev === city ? prev : city));
+      locationMetaRef.current = null;
+      setShowLocationSuggestions(false);
+      setLocationSuggestions([]);
+    });
+    return () => {
+      off();
+      if (locationPersistRef.current) clearTimeout(locationPersistRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     getActiveCategories()
@@ -168,6 +197,10 @@ export default function SearchBar() {
     locationMetaRef.current = null;
     setLocationSelectedIndex(-1);
     fetchLocationSuggestions(val);
+    if (locationPersistRef.current) clearTimeout(locationPersistRef.current);
+    locationPersistRef.current = setTimeout(() => {
+      saveManualLocation(val, locationOriginRef.current);
+    }, LOCATION_PERSIST_MS);
   };
 
   const handleLocationSuggestionClick = (suggestion) => {
@@ -179,6 +212,7 @@ export default function SearchBar() {
     setLocationSuggestions([]);
     setLocationSelectedIndex(-1);
     setIsLocationLoading(false);
+    saveManualLocation(suggestion.displayName, locationOriginRef.current);
   };
 
   const handleLocationKeyDown = (e) => {

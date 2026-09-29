@@ -146,14 +146,32 @@ const AdminBusinesses = () => {
     try {
       setConfirmLoading(true);
       setError("");
-      const { target, action } = confirmAction;
+      const { target, action, changeType } = confirmAction;
       const newStatus = action === "approve" ? "approved" : "rejected";
 
       await updateBusinessStatus(target._id, newStatus);
 
-      setBusinesses((prev) =>
-        prev.map((b) => (b._id === target._id ? { ...b, status: newStatus } : b))
-      );
+      if (changeType) {
+        // Edit / delete request resolved — the published listing status is unchanged.
+        if (changeType === "DELETE" && action === "approve") {
+          setBusinesses((prev) => prev.filter((b) => b._id !== target._id));
+          if (pagination) {
+            setPagination((prev) => {
+              if (!prev) return prev;
+              const total = prev.total - 1;
+              return { ...prev, total, pages: Math.ceil(total / prev.limit) };
+            });
+          }
+        } else {
+          setBusinesses((prev) =>
+            prev.map((b) => (b._id === target._id ? { ...b, pendingChange: null } : b))
+          );
+        }
+      } else {
+        setBusinesses((prev) =>
+          prev.map((b) => (b._id === target._id ? { ...b, status: newStatus } : b))
+        );
+      }
       setConfirmAction(null);
     } catch (err) {
       setError(err.response?.data?.message || "Failed to update status");
@@ -267,7 +285,13 @@ const AdminBusinesses = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {businesses.map((b) => (
+                  {businesses.map((b) => {
+                    const pendingChange =
+                      b.pendingChange &&
+                      (b.pendingChange.type === "EDIT" || b.pendingChange.type === "DELETE")
+                        ? b.pendingChange
+                        : null;
+                    return (
                     <TableRow key={b._id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -312,7 +336,16 @@ const AdminBusinesses = () => {
                         {b.city || "-"}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={b.status} />
+                        <div className="flex flex-col items-start gap-1">
+                          <StatusBadge status={b.status} />
+                          {pendingChange && (
+                            <span className="inline-block rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                              {pendingChange.type === "DELETE"
+                                ? "Delete Pending Approval"
+                                : "Changes Pending Approval"}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="hidden sm:table-cell text-muted-foreground text-sm">
                         {new Date(b.createdAt).toLocaleDateString()}
@@ -358,11 +391,47 @@ const AdminBusinesses = () => {
                                     setConfirmAction({ target: b, action: "reject" })
                                   }
                                 >
-                                  <XCircle className="mr-2 h-4 w-4" />
-                                  Reject
-                                </DropdownMenuItem>
-                              </>
-                            )}
+                                <XCircle className="mr-2 h-4 w-4" />
+                                Reject
+                              </DropdownMenuItem>
+                            </>
+                          )}
+
+                          {pendingChange && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-emerald-600 focus:text-emerald-600"
+                                onClick={() =>
+                                  setConfirmAction({
+                                    target: b,
+                                    action: "approve",
+                                    changeType: pendingChange.type,
+                                  })
+                                }
+                              >
+                                <CheckCircle className="mr-2 h-4 w-4" />
+                                {pendingChange.type === "DELETE"
+                                  ? "Approve Delete"
+                                  : "Approve Changes"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() =>
+                                  setConfirmAction({
+                                    target: b,
+                                    action: "reject",
+                                    changeType: pendingChange.type,
+                                  })
+                                }
+                              >
+                                <XCircle className="mr-2 h-4 w-4" />
+                                {pendingChange.type === "DELETE"
+                                  ? "Cancel Delete"
+                                  : "Reject Changes"}
+                              </DropdownMenuItem>
+                            </>
+                          )}
 
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -392,7 +461,8 @@ const AdminBusinesses = () => {
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
 
@@ -468,12 +538,53 @@ const AdminBusinesses = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {confirmAction?.action === "approve" ? "Approve Business" : "Reject Business"}
+              {confirmAction?.action === "approve"
+                ? confirmAction?.changeType === "DELETE"
+                  ? "Approve Deletion"
+                  : confirmAction?.changeType === "EDIT"
+                    ? "Approve Changes"
+                    : "Approve Business"
+                : confirmAction?.changeType === "DELETE"
+                  ? "Cancel Delete Request"
+                  : confirmAction?.changeType === "EDIT"
+                    ? "Reject Changes"
+                    : "Reject Business"}
             </DialogTitle>
             <DialogDescription>
-              Are you sure you want to{" "}
-              {confirmAction?.action === "approve" ? "approve" : "reject"}{" "}
-              <strong>{confirmAction?.target?.name}</strong>?
+              {confirmAction?.changeType === "EDIT" ? (
+                confirmAction?.action === "approve" ? (
+                  <>
+                    Publish the submitted changes for{" "}
+                    <strong>{confirmAction?.target?.name}</strong>? They will go
+                    live immediately.
+                  </>
+                ) : (
+                  <>
+                    Reject the submitted changes for{" "}
+                    <strong>{confirmAction?.target?.name}</strong>? The published
+                    listing stays unchanged.
+                  </>
+                )
+              ) : confirmAction?.changeType === "DELETE" ? (
+                confirmAction?.action === "approve" ? (
+                  <>
+                    Delete <strong>{confirmAction?.target?.name}</strong>{" "}
+                    permanently? This cannot be undone.
+                  </>
+                ) : (
+                  <>
+                    Cancel the delete request for{" "}
+                    <strong>{confirmAction?.target?.name}</strong>? The business
+                    stays listed.
+                  </>
+                )
+              ) : (
+                <>
+                  Are you sure you want to{" "}
+                  {confirmAction?.action === "approve" ? "approve" : "reject"}{" "}
+                  <strong>{confirmAction?.target?.name}</strong>?
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

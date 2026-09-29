@@ -2,6 +2,16 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const { ROLE_ENUM } = require("../utils/constants");
 
+const pendingProfileChangeSchema = new mongoose.Schema(
+  {
+    fullName: { type: String, default: null },
+    phone: { type: String, default: null },
+    whatsappNumber: { type: String, default: null },
+    submittedAt: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     fullName: {
@@ -72,6 +82,12 @@ const userSchema = new mongoose.Schema(
     approvalStatus: {
       type: String,
       enum: ["pending", "approved", "rejected"],
+      default: null,
+    },
+    // Vendor profile edits waiting for admin approval.
+    // Live profile fields stay untouched until approved.
+    pendingProfileChange: {
+      type: pendingProfileChangeSchema,
       default: null,
     },
     publicId: {

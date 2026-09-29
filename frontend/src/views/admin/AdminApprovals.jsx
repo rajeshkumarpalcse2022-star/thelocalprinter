@@ -13,6 +13,7 @@ import {
 import {
   getPendingApprovals,
   updateBusinessStatus,
+  updateProfileChangeStatus,
 } from "../../services/adminService";
 import { PageHeader } from "../../components/shared/page-header";
 import { EmptyState } from "../../components/shared/empty-state";
@@ -46,12 +47,15 @@ import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 
 const AdminApprovals = () => {
   const [businesses, setBusinesses] = useState([]);
+  const [profileChanges, setProfileChanges] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [actionLoading, setActionLoading] = useState(null);
   const [error, setError] = useState("");
   const [confirmAction, setConfirmAction] = useState(null);
+  const [profileActionLoading, setProfileActionLoading] = useState(null);
+  const [profileConfirm, setProfileConfirm] = useState(null);
 
   const fetchApprovals = async (p = 1) => {
     setLoading(true);
@@ -59,6 +63,7 @@ const AdminApprovals = () => {
     try {
       const res = await getPendingApprovals(p);
       setBusinesses(res.data.businesses);
+      setProfileChanges(res.data.profileChanges || []);
       setPagination(res.data.pagination);
     } catch (err) {
       setError(err.response?.data?.message || "Failed to load pending approvals");
@@ -70,6 +75,19 @@ const AdminApprovals = () => {
   useEffect(() => {
     fetchApprovals(page);
   }, [page]);
+
+  const getChangeType = (b) => {
+    if (b.pendingChange?.type === "DELETE") return "DELETE";
+    if (b.pendingChange?.type === "EDIT") return "EDIT";
+    if (b.status === "pending") return "NEW";
+    return null;
+  };
+
+  const changeTypeMeta = {
+    NEW: { label: "New Registration", className: "bg-blue-500/10 text-blue-700 border-blue-500/30 dark:text-blue-400" },
+    EDIT: { label: "Change Request", className: "bg-amber-500/10 text-amber-700 border-amber-500/30 dark:text-amber-400" },
+    DELETE: { label: "Delete Request", className: "bg-red-500/10 text-red-700 border-red-500/30 dark:text-red-400" },
+  };
 
   const handleAction = async (id, status) => {
     try {
@@ -88,6 +106,20 @@ const AdminApprovals = () => {
     }
   };
 
+  const handleProfileAction = async (id, status) => {
+    try {
+      setProfileActionLoading(id);
+      setError("");
+      await updateProfileChangeStatus(id, status);
+      setProfileChanges((prev) => prev.filter((p) => p._id !== id));
+      setProfileConfirm(null);
+    } catch (err) {
+      setError(err.response?.data?.message || `Failed to ${status} profile change`);
+    } finally {
+      setProfileActionLoading(null);
+    }
+  };
+
   const getInitials = (name) => {
     if (!name) return "?";
     return name
@@ -102,7 +134,7 @@ const AdminApprovals = () => {
     <div className="space-y-6">
       <PageHeader
         title="Pending Approvals"
-        description="Review and approve or reject business registrations."
+        description="Review new business registrations, vendor change requests, deletions and profile edits."
       />
 
       {error && (
@@ -124,11 +156,21 @@ const AdminApprovals = () => {
           {loading ? (
             <PageLoader text="Loading pending approvals..." />
           ) : businesses.length === 0 ? (
-            <EmptyState
-              icon={Clock}
-              title="No Pending Approvals"
-              description="All caught up! No businesses waiting for review."
-            />
+            <div className="p-6">
+              <EmptyState
+                icon={Clock}
+                title={
+                  profileChanges.length === 0
+                    ? "No Pending Approvals"
+                    : "No Business Requests"
+                }
+                description={
+                  profileChanges.length === 0
+                    ? "All caught up! No businesses waiting for review."
+                    : "Vendor profile changes are listed below."
+                }
+              />
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -142,7 +184,10 @@ const AdminApprovals = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {businesses.map((b) => (
+                  {businesses.map((b) => {
+                    const changeType = getChangeType(b);
+                    const meta = changeType ? changeTypeMeta[changeType] : null;
+                    return (
                     <TableRow key={b._id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -156,6 +201,13 @@ const AdminApprovals = () => {
                             <p className="text-sm text-muted-foreground truncate max-w-[200px]">
                               {b.description?.slice(0, 40) || "No description"}
                             </p>
+                            {meta && (
+                              <span
+                                className={`inline-block mt-1.5 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${meta.className}`}
+                              >
+                                {meta.label}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </TableCell>
@@ -178,7 +230,7 @@ const AdminApprovals = () => {
                         )}
                       </TableCell>
                       <TableCell className="hidden sm:table-cell text-muted-foreground">
-                        {new Date(b.createdAt).toLocaleDateString()}
+                        {new Date(b.pendingChange?.submittedAt || b.createdAt).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
@@ -187,7 +239,12 @@ const AdminApprovals = () => {
                             variant="outline"
                             className="h-8 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400 dark:hover:bg-emerald-900"
                             onClick={() =>
-                              setConfirmAction({ id: b._id, status: "approved", name: b.name })
+                              setConfirmAction({
+                                id: b._id,
+                                status: "approved",
+                                name: b.name,
+                                type: changeType,
+                              })
                             }
                             disabled={actionLoading === b._id}
                           >
@@ -203,7 +260,12 @@ const AdminApprovals = () => {
                             variant="outline"
                             className="h-8 border-red-200 bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-400 dark:hover:bg-red-900"
                             onClick={() =>
-                              setConfirmAction({ id: b._id, status: "rejected", name: b.name })
+                              setConfirmAction({
+                                id: b._id,
+                                status: "rejected",
+                                name: b.name,
+                                type: changeType,
+                              })
                             }
                             disabled={actionLoading === b._id}
                           >
@@ -213,7 +275,8 @@ const AdminApprovals = () => {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
 
@@ -247,6 +310,146 @@ const AdminApprovals = () => {
         </CardContent>
       </Card>
 
+      {profileChanges.length > 0 && (
+        <Card>
+          <CardContent className="p-0">
+            <div className="border-b px-6 py-4">
+              <h3 className="text-sm font-semibold text-foreground">
+                Vendor Profile Changes
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Profile edits submitted by vendors, waiting for approval.
+              </p>
+            </div>
+
+            <div className="divide-y">
+              {profileChanges.map((p) => {
+                const change = p.pendingProfileChange || {};
+                return (
+                  <div
+                    key={p._id}
+                    className="flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold text-foreground">
+                          {change.fullName || p.fullName}
+                        </p>
+                        <span className="inline-block rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                          Change Request
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {p.email}
+                        {p.publicId ? ` · ${p.publicId}` : ""}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                          Name: {change.fullName || "-"}
+                        </span>
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                          Phone: {change.phone || "-"}
+                        </span>
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                          WhatsApp: {change.whatsappNumber || "-"}
+                        </span>
+                      </div>
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        Requested{" "}
+                        {change.submittedAt
+                          ? new Date(change.submittedAt).toLocaleString()
+                          : "-"}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1 self-start sm:self-auto">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400 dark:hover:bg-emerald-900"
+                        onClick={() =>
+                          setProfileConfirm({
+                            id: p._id,
+                            status: "approved",
+                            name: change.fullName || p.fullName,
+                          })
+                        }
+                        disabled={profileActionLoading === p._id}
+                      >
+                        {profileActionLoading === p._id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle className="h-3.5 w-3.5" />
+                        )}
+                        <span className="ml-1 hidden sm:inline">Approve</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 border-red-200 bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-400 dark:hover:bg-red-900"
+                        onClick={() =>
+                          setProfileConfirm({
+                            id: p._id,
+                            status: "rejected",
+                            name: change.fullName || p.fullName,
+                          })
+                        }
+                        disabled={profileActionLoading === p._id}
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                        <span className="ml-1 hidden sm:inline">Reject</span>
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog
+        open={!!profileConfirm}
+        onOpenChange={(open) => !open && setProfileConfirm(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {profileConfirm?.status === "approved"
+                ? "Approve Profile Change"
+                : "Reject Profile Change"}
+            </DialogTitle>
+            <DialogDescription>
+              {profileConfirm?.status === "approved"
+                ? `Apply the submitted profile changes for "${profileConfirm?.name}"? They will go live immediately.`
+                : `Reject the submitted profile changes for "${profileConfirm?.name}"? The current profile stays unchanged.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setProfileConfirm(null)}
+              disabled={profileActionLoading === profileConfirm?.id}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant={profileConfirm?.status === "approved" ? "default" : "destructive"}
+              onClick={() =>
+                profileConfirm &&
+                handleProfileAction(profileConfirm.id, profileConfirm.status)
+              }
+              disabled={profileActionLoading === profileConfirm?.id}
+            >
+              {profileActionLoading === profileConfirm?.id && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {profileConfirm?.status === "approved" ? "Approve" : "Reject"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog
         open={!!confirmAction}
         onOpenChange={(open) => !open && setConfirmAction(null)}
@@ -254,12 +457,30 @@ const AdminApprovals = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {confirmAction?.status === "approved" ? "Approve Business" : "Reject Business"}
+              {confirmAction?.status === "approved"
+                ? confirmAction?.type === "DELETE"
+                  ? "Approve Deletion"
+                  : confirmAction?.type === "EDIT"
+                    ? "Approve Changes"
+                    : "Approve Business"
+                : confirmAction?.type === "DELETE"
+                  ? "Reject Deletion"
+                  : confirmAction?.type === "EDIT"
+                    ? "Reject Changes"
+                    : "Reject Business"}
             </DialogTitle>
             <DialogDescription>
               {confirmAction?.status === "approved"
-                ? `Are you sure you want to approve "${confirmAction?.name}"? This business will become visible on the platform.`
-                : `Are you sure you want to reject "${confirmAction?.name}"? The vendor will be notified.`}
+                ? confirmAction?.type === "DELETE"
+                  ? `Delete "${confirmAction?.name}" permanently? This cannot be undone.`
+                  : confirmAction?.type === "EDIT"
+                    ? `Publish the submitted changes for "${confirmAction?.name}"? They will go live immediately.`
+                    : `Are you sure you want to approve "${confirmAction?.name}"? This business will become visible on the platform.`
+                : confirmAction?.type === "DELETE"
+                  ? `Cancel the delete request for "${confirmAction?.name}"? The business stays listed.`
+                  : confirmAction?.type === "EDIT"
+                    ? `Reject the submitted changes for "${confirmAction?.name}"? The published listing stays unchanged.`
+                    : `Are you sure you want to reject "${confirmAction?.name}"? The vendor will be notified.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

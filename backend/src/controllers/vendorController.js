@@ -3,6 +3,10 @@ const User = require("../models/User");
 const Review = require("../models/Review");
 const Category = require("../models/Category");
 const Settings = require("../models/Settings");
+const { applyBusinessPatch } = require("../utils/businessPatch");
+
+const hasDeleteRequest = (business) =>
+  !!business.pendingChange && business.pendingChange.type === "DELETE";
 
 exports.getOnboardingStatus = async (req, res) => {
   try {
@@ -136,7 +140,7 @@ exports.getMyBusinesses = async (req, res) => {
         .limit(limit)
         .populate("categoryId", "name image")
         .populate("serviceIds", "name")
-        .select("name description category categoryId serviceIds phone address city status isActive createdAt"),
+        .select("name description category categoryId serviceIds phone address city status isActive pendingChange createdAt"),
       Business.countDocuments(query),
     ]);
 
@@ -329,76 +333,51 @@ exports.updateBusiness = async (req, res) => {
 
     const data = req.body;
 
+    if (data.name !== undefined && (!data.name || !String(data.name).trim())) {
+      return res.status(400).json({
+        success: false,
+        message: "Business name is required",
+      });
+    }
+
+    if (hasDeleteRequest(business)) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "A delete request for this business is already waiting for admin approval. It must be reviewed first.",
+      });
+    }
+
+    // Approved businesses stay live with the current data.
+    // Submitted changes are stored separately until an admin approves them.
+    if (business.status === "approved") {
+      const patch = applyBusinessPatch({}, data);
+      const existingData =
+        business.pendingChange && business.pendingChange.type === "EDIT"
+          ? business.pendingChange.data || {}
+          : {};
+
+      business.pendingChange = {
+        type: "EDIT",
+        data: { ...existingData, ...patch },
+        submittedAt: new Date(),
+      };
+      await business.save();
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Changes submitted for admin approval. Your current listing stays live until approved.",
+        data: { business },
+      });
+    }
+
+    // Business is not public yet (pending or rejected) → apply directly.
+    applyBusinessPatch(business, data);
+
     if (business.status === "rejected") {
       business.status = "pending";
     }
-
-    // Section 1
-    if (data.name !== undefined) business.name = data.name.trim();
-    if (data.description !== undefined) business.description = data.description;
-    if (data.establishedYear !== undefined) business.establishedYear = data.establishedYear;
-    if (data.workingHours !== undefined) business.workingHours = data.workingHours;
-
-    // Section 2
-    if (data.contactName !== undefined) business.contactName = data.contactName;
-    if (data.phone !== undefined) business.phone = data.phone;
-    if (data.whatsapp !== undefined) business.whatsapp = data.whatsapp;
-    if (data.contactEmail !== undefined) business.contactEmail = data.contactEmail;
-    if (data.website !== undefined) business.website = data.website;
-
-    // Section 3
-    if (data.category !== undefined) business.category = data.category;
-    if (data.categoryId !== undefined) business.categoryId = data.categoryId;
-    if (data.serviceIds !== undefined) business.serviceIds = data.serviceIds;
-    if (data.tags !== undefined) business.tags = data.tags;
-    if (data.address !== undefined) business.address = data.address;
-    if (data.city !== undefined) business.city = data.city;
-    if (data.gpsCoordinates !== undefined) business.gpsCoordinates = data.gpsCoordinates;
-    if (data.googleBusinessProfileLink !== undefined) business.googleBusinessProfileLink = data.googleBusinessProfileLink;
-
-    // Section 4
-    if (data.gstAvailable !== undefined) business.gstAvailable = data.gstAvailable;
-    if (data.gstNumber !== undefined) business.gstNumber = data.gstNumber;
-
-    // Section 5
-    if (data.orderLimits !== undefined) business.orderLimits = data.orderLimits;
-
-    // Section 6
-    if (data.serviceType !== undefined) business.serviceType = data.serviceType;
-
-    // Section 7
-    if (data.customerType !== undefined) business.customerType = data.customerType;
-
-    // Section 8
-    if (data.orderingMethod !== undefined) business.orderingMethod = data.orderingMethod;
-
-    // Section 9
-    if (data.paymentModes !== undefined) business.paymentModes = data.paymentModes;
-
-    // Section 10
-    if (data.socialMedia !== undefined) business.socialMedia = data.socialMedia;
-
-    // Section 11
-    if (data.verificationMedia !== undefined) business.verificationMedia = data.verificationMedia;
-
-    // Section 12
-    if (data.languages !== undefined) business.languages = data.languages;
-
-    // Section 13
-    if (data.returnReplacementPolicy !== undefined) business.returnReplacementPolicy = data.returnReplacementPolicy;
-    if (data.inHouseDesignerAvailable !== undefined) business.inHouseDesignerAvailable = data.inHouseDesignerAvailable;
-    if (data.customerLocationVisitAvailable !== undefined) business.customerLocationVisitAvailable = data.customerLocationVisitAvailable;
-    if (data.addonServices !== undefined) business.addonServices = data.addonServices;
-
-    // Section 14
-    if (data.sampleDisplayAvailable !== undefined) business.sampleDisplayAvailable = data.sampleDisplayAvailable;
-    if (data.preferredFileFormats !== undefined) business.preferredFileFormats = data.preferredFileFormats;
-
-    // Section 15
-    if (data.acceptsPurchaseOrder !== undefined) business.acceptsPurchaseOrder = data.acceptsPurchaseOrder;
-
-    // Section 16
-    if (data.fraudReport !== undefined) business.fraudReport = data.fraudReport;
 
     await business.save();
 
@@ -435,11 +414,25 @@ exports.deleteBusiness = async (req, res) => {
       });
     }
 
-    await Business.findByIdAndDelete(id);
+    if (hasDeleteRequest(business)) {
+      return res.status(409).json({
+        success: false,
+        message: "A delete request for this business is already waiting for admin approval.",
+      });
+    }
+
+    // Deletion always requires admin approval.
+    business.pendingChange = {
+      type: "DELETE",
+      data: null,
+      submittedAt: new Date(),
+    };
+    await business.save();
 
     res.status(200).json({
       success: true,
-      message: "Business deleted successfully",
+      message: "Delete request submitted. The business will be removed after admin approval.",
+      data: { business },
     });
   } catch (error) {
     res.status(500).json({
@@ -469,7 +462,38 @@ exports.toggleBusinessStatus = async (req, res) => {
       });
     }
 
-    business.isActive = !business.isActive;
+    if (hasDeleteRequest(business)) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "A delete request for this business is already waiting for admin approval.",
+      });
+    }
+
+    const nextActiveState = !business.isActive;
+
+    // Approved businesses only change their visibility after admin approval.
+    if (business.status === "approved") {
+      const existingData =
+        business.pendingChange && business.pendingChange.type === "EDIT"
+          ? business.pendingChange.data || {}
+          : {};
+
+      business.pendingChange = {
+        type: "EDIT",
+        data: { ...existingData, isActive: nextActiveState },
+        submittedAt: new Date(),
+      };
+      await business.save();
+
+      return res.status(200).json({
+        success: true,
+        message: `Request to ${nextActiveState ? "activate" : "deactivate"} this business submitted for admin approval.`,
+        data: { business },
+      });
+    }
+
+    business.isActive = nextActiveState;
     await business.save();
 
     res.status(200).json({
@@ -503,6 +527,64 @@ exports.getProfile = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error fetching profile",
+    });
+  }
+};
+
+exports.updateProfile = async (req, res) => {
+  try {
+    const { fullName, phone, whatsappNumber } = req.body;
+
+    const trimmedName = typeof fullName === "string" ? fullName.trim() : "";
+    if (trimmedName.length < 2 || trimmedName.length > 100) {
+      return res.status(400).json({
+        success: false,
+        message: "Full name must be between 2 and 100 characters",
+      });
+    }
+
+    const normalizedPhone = phone === undefined || phone === null ? null : String(phone).trim();
+    if (normalizedPhone && !/^[\d+\-\s()]*$/.test(normalizedPhone)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid phone number",
+      });
+    }
+
+    const normalizedWhats =
+      whatsappNumber === undefined || whatsappNumber === null
+        ? null
+        : String(whatsappNumber).trim();
+
+    const user = await User.findByIdAndUpdate(
+      req.user.userId,
+      {
+        pendingProfileChange: {
+          fullName: trimmedName,
+          phone: normalizedPhone || "",
+          whatsappNumber: normalizedWhats || "",
+          submittedAt: new Date(),
+        },
+      },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Profile change submitted for admin approval. Your current profile stays live until approved.",
+      data: { user },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Server error updating profile",
     });
   }
 };

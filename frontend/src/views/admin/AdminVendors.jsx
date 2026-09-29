@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   Search,
   Trash2,
   Eye,
+  Pencil,
   Loader2,
   MoreHorizontal,
   UserCheck,
@@ -14,8 +16,18 @@ import {
   Mail,
   Phone,
   Calendar,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
-import { getVendors, toggleVendorStatus, deleteVendor } from "../../services/adminService";
+import {
+  getVendors,
+  toggleVendorStatus,
+  deleteVendor,
+  updateUserApprovalStatus,
+  getBusinesses,
+  deleteBusiness,
+} from "../../services/adminService";
+import BusinessViewDialog from "./BusinessViewDialog";
 import { PageHeader } from "../../components/shared/page-header";
 import { StatusBadge } from "../../components/shared/status-badge";
 import { EmptyState } from "../../components/shared/empty-state";
@@ -52,6 +64,7 @@ import CopyableId from "../../components/admin/CopyableId";
 import UnifiedViewDialog from "./UnifiedViewDialog";
 
 const AdminVendors = () => {
+  const router = useRouter();
   const [vendors, setVendors] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -62,6 +75,16 @@ const AdminVendors = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [viewTarget, setViewTarget] = useState(null);
+  const [approvalConfirm, setApprovalConfirm] = useState(null);
+  const [approvalLoading, setApprovalLoading] = useState(false);
+  const [businessesTarget, setBusinessesTarget] = useState(null);
+  const [vendorBusinesses, setVendorBusinesses] = useState([]);
+  const [businessesLoading, setBusinessesLoading] = useState(false);
+  const [businessesError, setBusinessesError] = useState("");
+  const [bizViewTarget, setBizViewTarget] = useState(null);
+  const [bizDeleteTarget, setBizDeleteTarget] = useState(null);
+  const [bizDeleteLoading, setBizDeleteLoading] = useState(false);
+  const [bizDeleteError, setBizDeleteError] = useState("");
   const debounceRef = useRef(null);
 
   const fetchVendors = async (p = 1, s = "") => {
@@ -111,6 +134,68 @@ const AdminVendors = () => {
       setError(err.response?.data?.message || "Failed to update vendor status");
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const handleShowBusinesses = async (v) => {
+    setBusinessesTarget(v);
+    setVendorBusinesses([]);
+    setBusinessesError("");
+    setBusinessesLoading(true);
+    try {
+      const res = await getBusinesses(1, "", "", v._id, 100);
+      setVendorBusinesses(res.data.businesses || []);
+    } catch (err) {
+      setBusinessesError(err.response?.data?.message || "Failed to load businesses");
+    } finally {
+      setBusinessesLoading(false);
+    }
+  };
+
+  const handleDeleteBusinessConfirm = async () => {
+    if (!bizDeleteTarget) return;
+    try {
+      setBizDeleteLoading(true);
+      setBizDeleteError("");
+      await deleteBusiness(bizDeleteTarget._id);
+      const vendorId = businessesTarget?._id;
+      setVendorBusinesses((prev) => prev.filter((b) => b._id !== bizDeleteTarget._id));
+      setVendors((prev) =>
+        prev.map((v) =>
+          v._id === vendorId && typeof v.businessCount === "number" && v.businessCount > 0
+            ? { ...v, businessCount: v.businessCount - 1 }
+            : v
+        )
+      );
+      setBizDeleteTarget(null);
+    } catch (err) {
+      setBizDeleteError(err.response?.data?.message || "Failed to delete business");
+    } finally {
+      setBizDeleteLoading(false);
+    }
+  };
+
+  const handleApprovalAction = async () => {
+    if (!approvalConfirm) return;
+    try {
+      setApprovalLoading(true);
+      setError("");
+      const res = await updateUserApprovalStatus(
+        approvalConfirm.id,
+        approvalConfirm.status
+      );
+      setVendors((prev) =>
+        prev.map((v) =>
+          v._id === approvalConfirm.id
+            ? { ...v, approvalStatus: res.data.user.approvalStatus }
+            : v
+        )
+      );
+      setApprovalConfirm(null);
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to update vendor approval");
+    } finally {
+      setApprovalLoading(false);
     }
   };
 
@@ -203,7 +288,8 @@ const AdminVendors = () => {
                   <TableRow>
                     <TableHead>Vendor</TableHead>
                     <TableHead className="hidden sm:table-cell">Phone</TableHead>
-                    <TableHead className="hidden md:table-cell">Businesses</TableHead>
+                    <TableHead>Businesses</TableHead>
+                    <TableHead className="hidden sm:table-cell">Approval</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="hidden sm:table-cell">Joined</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
@@ -229,11 +315,19 @@ const AdminVendors = () => {
                       <TableCell className="hidden sm:table-cell text-muted-foreground">
                         {v.phone || "-"}
                       </TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        <Badge variant="secondary" className="font-mono">
+                      <TableCell>
+                        <Badge
+                          variant="secondary"
+                          className="font-mono cursor-pointer transition-colors hover:bg-primary/15 hover:text-primary"
+                          title={`View businesses of ${v.fullName}`}
+                          onClick={() => handleShowBusinesses(v)}
+                        >
                           <Building2 className="mr-1 h-3 w-3" />
                           {v.businessCount}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <StatusBadge status={v.approvalStatus || "pending"} />
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={v.isActive ? "active" : "inactive"} />
@@ -254,6 +348,39 @@ const AdminVendors = () => {
                               <Eye className="mr-2 h-4 w-4" />
                               View
                             </DropdownMenuItem>
+                            {v.approvalStatus !== "approved" && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-emerald-600 focus:text-emerald-600"
+                                  onClick={() =>
+                                    setApprovalConfirm({
+                                      id: v._id,
+                                      name: v.fullName,
+                                      status: "approved",
+                                    })
+                                  }
+                                  disabled={approvalLoading}
+                                >
+                                  <CheckCircle className="mr-2 h-4 w-4" />
+                                  Approve Account
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={() =>
+                                    setApprovalConfirm({
+                                      id: v._id,
+                                      name: v.fullName,
+                                      status: "rejected",
+                                    })
+                                  }
+                                  disabled={approvalLoading}
+                                >
+                                  <XCircle className="mr-2 h-4 w-4" />
+                                  Reject Account
+                                </DropdownMenuItem>
+                              </>
+                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               onClick={() => handleToggle(v._id)}
@@ -344,6 +471,187 @@ const AdminVendors = () => {
               disabled={deleteLoading}
             >
               {deleteLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!approvalConfirm}
+        onOpenChange={(open) => !open && setApprovalConfirm(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {approvalConfirm?.status === "approved"
+                ? "Approve Vendor Account"
+                : "Reject Vendor Account"}
+            </DialogTitle>
+            <DialogDescription>
+              {approvalConfirm?.status === "approved"
+                ? `Approve "${approvalConfirm?.name}"? The vendor will be able to log in and manage their businesses.`
+                : `Reject "${approvalConfirm?.name}"? The vendor will not be able to log in.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setApprovalConfirm(null)}
+              disabled={approvalLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant={approvalConfirm?.status === "approved" ? "default" : "destructive"}
+              onClick={handleApprovalAction}
+              disabled={approvalLoading}
+            >
+              {approvalLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {approvalConfirm?.status === "approved" ? "Approve" : "Reject"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!businessesTarget}
+        onOpenChange={(open) => !open && setBusinessesTarget(null)}
+      >
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Businesses — {businessesTarget?.fullName}</DialogTitle>
+            <DialogDescription>
+              {typeof businessesTarget?.businessCount === "number"
+                ? `${businessesTarget.businessCount} business${
+                    businessesTarget.businessCount === 1 ? "" : "es"
+                  } registered for this vendor.`
+                : "Businesses registered for this vendor."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {businessesLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : businessesError ? (
+            <p className="py-6 text-center text-sm text-destructive">{businessesError}</p>
+          ) : vendorBusinesses.length === 0 ? (
+            <EmptyState
+              icon={Building2}
+              title="No businesses yet"
+              description="This vendor has not created any business listing."
+            />
+          ) : (
+            <div className="space-y-2">
+              {vendorBusinesses.map((b) => (
+                <div
+                  key={b._id}
+                  className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3 sm:p-4"
+                >
+                  <div className="min-w-0 flex-1 basis-40">
+                    <p className="truncate text-sm font-semibold text-foreground">{b.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {[
+                        typeof b.category === "string" ? b.category : b.category?.name,
+                        b.city,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <StatusBadge status={b.status} />
+                      <StatusBadge status={b.isActive ? "active" : "inactive"} />
+                      <span className="text-[11px] text-muted-foreground">
+                        {new Date(b.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 text-blue-500 hover:bg-blue-500/10 hover:text-blue-600"
+                      title="View business"
+                      onClick={() => setBizViewTarget(b)}
+                    >
+                      <Eye size={16} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 text-amber-500 hover:bg-amber-500/10 hover:text-amber-600"
+                      title="Edit business"
+                      onClick={() => router.push(`/admin/businesses/${b._id}/edit`)}
+                    >
+                      <Pencil size={16} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 text-red-500 hover:bg-red-500/10 hover:text-red-600"
+                      title="Delete business"
+                      onClick={() => {
+                        setBizDeleteError("");
+                        setBizDeleteTarget(b);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {typeof businessesTarget?.businessCount === "number" &&
+                businessesTarget.businessCount > vendorBusinesses.length && (
+                  <p className="pt-1 text-center text-xs text-muted-foreground">
+                    Showing {vendorBusinesses.length} of {businessesTarget.businessCount}{" "}
+                    businesses.
+                  </p>
+                )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <BusinessViewDialog
+        open={!!bizViewTarget}
+        onOpenChange={(open) => {
+          if (!open) setBizViewTarget(null);
+        }}
+        businessId={bizViewTarget?._id}
+      />
+
+      <Dialog
+        open={!!bizDeleteTarget}
+        onOpenChange={(open) => {
+          if (!open && !bizDeleteLoading) {
+            setBizDeleteTarget(null);
+            setBizDeleteError("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Business</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <strong>{bizDeleteTarget?.name}</strong>? This
+              action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {bizDeleteError && <p className="text-sm text-destructive">{bizDeleteError}</p>}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBizDeleteTarget(null);
+                setBizDeleteError("");
+              }}
+              disabled={bizDeleteLoading}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteBusinessConfirm} disabled={bizDeleteLoading}>
+              {bizDeleteLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Delete
             </Button>
           </DialogFooter>

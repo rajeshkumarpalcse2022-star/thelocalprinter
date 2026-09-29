@@ -67,9 +67,9 @@ export const deleteVendor = async (id) => {
 
 // ─── Businesses ───
 
-export const getBusinesses = async (page = 1, search = "", status = "") => {
+export const getBusinesses = async (page = 1, search = "", status = "", vendor = "", limit = 15) => {
   const response = await api.get("/admin/businesses", {
-    params: { page, search, status },
+    params: { page, search, status, vendor, limit },
   });
   return response.data;
 };
@@ -112,6 +112,13 @@ export const updateBusinessStatus = async (id, status) => {
 
 export const updateUserApprovalStatus = async (id, status) => {
   const response = await api.patch(`/admin/users/${id}/approval-status`, {
+    status,
+  });
+  return response.data;
+};
+
+export const updateProfileChangeStatus = async (id, status) => {
+  const response = await api.patch(`/admin/profile-changes/${id}/status`, {
     status,
   });
   return response.data;
@@ -186,14 +193,6 @@ export const getResellerApplications = async (page = 1, search = "", status = ""
 
 export const getResellerApplicationById = async (id) => {
   const response = await api.get(`/admin/reseller-applications/${id}`);
-  return response.data;
-};
-
-export const updateResellerApplicationStatus = async (id, status, rejectionReason = "") => {
-  const response = await api.patch(`/admin/reseller-applications/${id}/status`, {
-    status,
-    rejectionReason,
-  });
   return response.data;
 };
 

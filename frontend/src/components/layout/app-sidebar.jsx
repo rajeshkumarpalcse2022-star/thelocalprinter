@@ -19,6 +19,7 @@ import {
   Star,
   Package,
   MessageCircle,
+  ClipboardCheck,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -43,9 +44,10 @@ const navItemsByRole = {
   ],
   admin: [
     { to: "/admin/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+    { to: "/admin/approvals", icon: ClipboardCheck, label: "Approvals", showBadge: true },
     { to: "/admin/vendors", icon: Store, label: "Vendors" },
     { to: "/admin/users", icon: Users, label: "Users" },
-    { to: "/admin/businesses", icon: Building2, label: "Businesses", showBadge: true },
+    { to: "/admin/businesses", icon: Building2, label: "Businesses" },
     { to: "/admin/categories", icon: Tag, label: "Categories" },
     { to: "/admin/reviews", icon: Star, label: "Reviews" },
     { to: "/admin/chat", icon: MessageCircle, label: "Chat", showChatBadge: true },

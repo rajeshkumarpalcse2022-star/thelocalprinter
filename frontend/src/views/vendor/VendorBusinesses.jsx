@@ -69,6 +69,12 @@ const VendorBusinesses = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [togglingId, setTogglingId] = useState(null);
+  const [notice, setNotice] = useState("");
+
+  const getPendingChange = (b) =>
+    b.pendingChange && (b.pendingChange.type === "EDIT" || b.pendingChange.type === "DELETE")
+      ? b.pendingChange
+      : null;
 
   const fetchBusinesses = useCallback(async () => {
     setLoading(true);
@@ -96,7 +102,8 @@ const VendorBusinesses = () => {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await deleteBusiness(deleteTarget._id);
+      const res = await deleteBusiness(deleteTarget._id);
+      setNotice(res.message || "Delete request submitted for admin approval.");
       setShowDelete(false);
       setDeleteTarget(null);
       fetchBusinesses();
@@ -110,7 +117,8 @@ const VendorBusinesses = () => {
   const handleToggle = async (b) => {
     setTogglingId(b._id);
     try {
-      await toggleBusinessStatus(b._id);
+      const res = await toggleBusinessStatus(b._id);
+      if (res.message) setNotice(res.message);
       fetchBusinesses();
     } catch (err) {
       alert(err.response?.data?.message || "Failed to toggle status");
@@ -123,7 +131,7 @@ const VendorBusinesses = () => {
     <div className="p-6 space-y-6">
       <PageHeader
         title="My Businesses"
-        description="Manage all your printing businesses in one place."
+        description="Changes, status toggles and deletions go live only after admin approval."
         actions={
           <Button onClick={() => router.push("/vendor/businesses/new")} className="gap-2">
             <Plus size={18} />
@@ -131,6 +139,20 @@ const VendorBusinesses = () => {
           </Button>
         }
       />
+
+      {notice && (
+        <div className="flex items-center justify-between rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+          <span>{notice}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-amber-700 hover:text-amber-800 dark:text-amber-400"
+            onClick={() => setNotice("")}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -181,16 +203,19 @@ const VendorBusinesses = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Business Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>City</TableHead>
+                    <TableHead className="hidden md:table-cell">Category</TableHead>
+                    <TableHead className="hidden sm:table-cell">City</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Active</TableHead>
-                    <TableHead>Created</TableHead>
+                    <TableHead className="hidden lg:table-cell">Created</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {businesses.map((b) => (
+                  {businesses.map((b) => {
+                    const pendingChange = getPendingChange(b);
+                    const deletePending = pendingChange?.type === "DELETE";
+                    return (
                     <TableRow key={b._id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -202,10 +227,13 @@ const VendorBusinesses = () => {
                           <div>
                             <p className="text-sm font-semibold text-foreground">{b.name}</p>
                             <p className="text-xs text-muted-foreground">{b.phone || ""}</p>
+                            <p className="text-xs text-muted-foreground sm:hidden">
+                              {b.city || ""} · {new Date(b.createdAt).toLocaleDateString()}
+                            </p>
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                         <div className="flex items-center gap-2">
                           {b.categoryId?.image && (/^\s*</.test(b.categoryId.image) ? <div className="h-5 w-5 [&>svg]:w-5 [&>svg]:h-5" dangerouslySetInnerHTML={{ __html: b.categoryId.image }} /> : <img src={b.categoryId.image} alt="" className="h-5 w-5 object-contain" />)}
                           <div>
@@ -222,14 +250,35 @@ const VendorBusinesses = () => {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{b.city || "-"}</TableCell>
+                      <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{b.city || "-"}</TableCell>
                       <TableCell>
-                        <StatusBadge status={b.status} />
+                        <div className="flex flex-col items-start gap-1.5">
+                          <StatusBadge status={b.status} />
+                          {pendingChange && (
+                            <Badge
+                              variant="outline"
+                              className={
+                                deletePending
+                                  ? "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"
+                                  : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                              }
+                            >
+                              {deletePending ? "Delete Pending Approval" : "Changes Pending Approval"}
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <button
                           onClick={() => handleToggle(b)}
-                          disabled={togglingId === b._id}
+                          disabled={togglingId === b._id || deletePending}
+                          title={
+                            deletePending
+                              ? "A delete request is waiting for admin approval"
+                              : b.status === "approved"
+                                ? "Changes require admin approval"
+                                : undefined
+                          }
                           className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50"
                           style={{ background: b.isActive ? "#16a34a" : "#d1d5db" }}
                         >
@@ -239,7 +288,7 @@ const VendorBusinesses = () => {
                           />
                         </button>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                         {new Date(b.createdAt).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
@@ -255,7 +304,8 @@ const VendorBusinesses = () => {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
+                            className="h-8 w-8 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 disabled:opacity-40"
+                            disabled={deletePending}
                             onClick={() => router.push(`/vendor/businesses/${b._id}/edit`)}
                           >
                             <Edit2 size={14} />
@@ -263,7 +313,8 @@ const VendorBusinesses = () => {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                            className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-500/10 disabled:opacity-40"
+                            disabled={deletePending}
                             onClick={() => { setDeleteTarget(b); setShowDelete(true); }}
                           >
                             <Trash2 size={14} />
@@ -271,7 +322,8 @@ const VendorBusinesses = () => {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -295,15 +347,16 @@ const VendorBusinesses = () => {
       <Dialog open={showDelete} onOpenChange={setShowDelete}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete Business</DialogTitle>
+            <DialogTitle>Request Business Deletion</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete <span className="font-semibold text-foreground">{deleteTarget?.name}</span>? This action cannot be undone.
+              Delete request for <span className="font-semibold text-foreground">{deleteTarget?.name}</span>?
+              The business will only be removed after admin approval.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDelete(false)} disabled={deleting}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-              {deleting ? <><Loader2 size={16} className="animate-spin mr-2" />Deleting...</> : "Delete"}
+              {deleting ? <><Loader2 size={16} className="animate-spin mr-2" />Submitting...</> : "Request Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -3,8 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Store,
-  CheckCircle,
-  XCircle,
   Eye,
   Trash2,
   Loader2,
@@ -26,7 +24,6 @@ import {
 import {
   getResellerApplications,
   getResellerApplicationById,
-  updateResellerApplicationStatus,
   deleteResellerApplication,
 } from "../../services/adminService";
 import { PageHeader } from "../../components/shared/page-header";
@@ -37,7 +34,6 @@ import { Card, CardContent } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
-import { Textarea } from "../../components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -153,15 +149,11 @@ const AdminResellerApplications = () => {
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [actionLoading, setActionLoading] = useState(null);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedApp, setSelectedApp] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [rejectTarget, setRejectTarget] = useState(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [rejectLoading, setRejectLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const debounceRef = useRef(null);
@@ -215,48 +207,6 @@ const AdminResellerApplications = () => {
       setError(err.response?.data?.message || "Failed to load application details");
     } finally {
       setDetailLoading(false);
-    }
-  };
-
-  const handleApprove = async (id) => {
-    try {
-      setActionLoading(id);
-      setError("");
-      await updateResellerApplicationStatus(id, "APPROVED");
-      setApplications((prev) =>
-        prev.map((a) => (a._id === id ? { ...a, status: "APPROVED" } : a))
-      );
-      if (selectedApp?._id === id) setSelectedApp((prev) => ({ ...prev, status: "APPROVED" }));
-    } catch (err) {
-      setError(err.response?.data?.message || "Failed to approve application");
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleRejectConfirm = async () => {
-    if (!rejectTarget) return;
-    try {
-      setRejectLoading(true);
-      setError("");
-      await updateResellerApplicationStatus(rejectTarget._id, "REJECTED", rejectReason);
-      setApplications((prev) =>
-        prev.map((a) =>
-          a._id === rejectTarget._id ? { ...a, status: "REJECTED", rejectionReason: rejectReason } : a
-        )
-      );
-      if (selectedApp?._id === rejectTarget._id)
-        setSelectedApp((prev) => ({
-          ...prev,
-          status: "REJECTED",
-          rejectionReason: rejectReason,
-        }));
-      setRejectTarget(null);
-      setRejectReason("");
-    } catch (err) {
-      setError(err.response?.data?.message || "Failed to reject application");
-    } finally {
-      setRejectLoading(false);
     }
   };
 
@@ -424,34 +374,11 @@ const AdminResellerApplications = () => {
                               <Eye className="mr-2 h-4 w-4" />
                               View Details
                             </DropdownMenuItem>
-                            {a.status === "PENDING" && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onClick={() => handleApprove(a._id)}
-                                  disabled={actionLoading === a._id}
-                                >
-                                  {actionLoading === a._id ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <CheckCircle className="mr-2 h-4 w-4" />
-                                  )}
-                                  Approve
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => setRejectTarget(a)}
-                                  disabled={actionLoading === a._id}
-                                >
-                                  <XCircle className="mr-2 h-4 w-4" />
-                                  Reject
-                                </DropdownMenuItem>
-                              </>
-                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
                               onClick={() => setDeleteTarget(a)}
-                              disabled={actionLoading === a._id}
+                              disabled={deleteLoading && deleteTarget?._id === a._id}
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
                               Delete
@@ -564,87 +491,8 @@ const AdminResellerApplications = () => {
                   label="Location Video"
                 />
               </div>
-
-              {selectedApp.status === "PENDING" && (
-                <div className="flex gap-3 pt-2">
-                  <Button
-                    className="flex-1"
-                    onClick={() => {
-                      setSelectedApp(null);
-                      handleApprove(selectedApp._id);
-                    }}
-                    disabled={actionLoading === selectedApp._id}
-                  >
-                    {actionLoading === selectedApp._id ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                    )}
-                    Approve
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    className="flex-1"
-                    onClick={() => {
-                      setSelectedApp(null);
-                      setRejectTarget(selectedApp);
-                    }}
-                    disabled={actionLoading === selectedApp._id}
-                  >
-                    <XCircle className="mr-2 h-4 w-4" />
-                    Reject
-                  </Button>
-                </div>
-              )}
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Reject Reason Dialog */}
-      <Dialog
-        open={!!rejectTarget}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRejectTarget(null);
-            setRejectReason("");
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reject Application</DialogTitle>
-            <DialogDescription>
-              Provide a reason for rejecting {rejectTarget?.user?.fullName}&apos;s application
-              (optional).
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            placeholder="Reason for rejection..."
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-            rows={3}
-          />
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setRejectTarget(null);
-                setRejectReason("");
-              }}
-              disabled={rejectLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleRejectConfirm}
-              disabled={rejectLoading}
-            >
-              {rejectLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Reject
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

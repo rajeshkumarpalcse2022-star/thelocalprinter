@@ -77,7 +77,9 @@ exports.signup = async (req, res) => {
       whatsappNumber: whatsappNumber || null,
       emailVerified: true,
       registrationType: registrationType || null,
-      approvalStatus: "pending",
+      // Accounts are never held for approval. A vendor signs up, fills the
+      // business registration form, and only that business goes to admin approval.
+      approvalStatus: "approved",
     };
 
     const { generatePublicId } = require("../utils/publicId");
@@ -142,11 +144,11 @@ exports.signup = async (req, res) => {
         locationVideoPath,
         businessCardPath,
         isAlreadyListed,
-        status: "PENDING",
+        status: "APPROVED",
       });
       await resellerApp.save();
 
-      user.resellerApprovalStatus = "PENDING";
+      user.resellerApprovalStatus = "APPROVED";
       await user.save();
     }
 
@@ -221,7 +223,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    if (user.role !== "ADMIN" && user.approvalStatus === "pending") {
+    if (user.role === "VENDOR" && user.approvalStatus === "pending") {
       return res.status(403).json({
         success: false,
         message: "Your account is pending admin approval. Please wait for approval before logging in.",
@@ -229,7 +231,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    if (user.role !== "ADMIN" && user.approvalStatus === "rejected") {
+    if (user.role === "VENDOR" && user.approvalStatus === "rejected") {
       return res.status(403).json({
         success: false,
         message: "Your account has been rejected. Please contact support.",

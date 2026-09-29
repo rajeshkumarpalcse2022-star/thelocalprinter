@@ -1,5 +1,24 @@
 const mongoose = require("mongoose");
 
+const pendingChangeSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: ["EDIT", "DELETE"],
+      default: "EDIT",
+    },
+    data: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    submittedAt: {
+      type: Date,
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
 const businessSchema = new mongoose.Schema(
   {
     vendor: {
@@ -242,6 +261,12 @@ const businessSchema = new mongoose.Schema(
       },
       default: "pending",
     },
+    // Vendor submitted changes waiting for admin approval.
+    // The approved (live) data on this document stays untouched until approved.
+    pendingChange: {
+      type: pendingChangeSchema,
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -258,6 +283,7 @@ businessSchema.index({ createdAt: -1 });
 businessSchema.index({ category: 1 });
 businessSchema.index({ categoryId: 1 });
 businessSchema.index({ city: 1 });
+businessSchema.index({ "pendingChange.type": 1 });
 
 const Business = mongoose.model("Business", businessSchema);
 
