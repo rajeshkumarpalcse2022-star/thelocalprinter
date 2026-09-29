@@ -9,11 +9,13 @@ import {
   MoreHorizontal,
   Building2,
   MapPin,
+  Eye,
 } from "lucide-react";
 import {
   getPendingApprovals,
   updateBusinessStatus,
   updateProfileChangeStatus,
+  getAdminBusinessById,
 } from "../../services/adminService";
 import { PageHeader } from "../../components/shared/page-header";
 import { EmptyState } from "../../components/shared/empty-state";
@@ -56,6 +58,10 @@ const AdminApprovals = () => {
   const [confirmAction, setConfirmAction] = useState(null);
   const [profileActionLoading, setProfileActionLoading] = useState(null);
   const [profileConfirm, setProfileConfirm] = useState(null);
+  const [changeDetailId, setChangeDetailId] = useState(null);
+  const [changeDetail, setChangeDetail] = useState(null);
+  const [changeLoading, setChangeLoading] = useState(false);
+  const [changeError, setChangeError] = useState("");
 
   const fetchApprovals = async (p = 1) => {
     setLoading(true);
@@ -87,6 +93,61 @@ const AdminApprovals = () => {
     NEW: { label: "New Registration", className: "bg-blue-500/10 text-blue-700 border-blue-500/30 dark:text-blue-400" },
     EDIT: { label: "Change Request", className: "bg-amber-500/10 text-amber-700 border-amber-500/30 dark:text-amber-400" },
     DELETE: { label: "Delete Request", className: "bg-red-500/10 text-red-700 border-red-500/30 dark:text-red-400" },
+  };
+
+  const humanizeKey = (key) =>
+    String(key)
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/[_-]+/g, " ")
+      .replace(/^./, (c) => c.toUpperCase());
+
+  const formatDiffValue = (value) => {
+    if (value === null || value === undefined || value === "") return "—";
+    if (Array.isArray(value)) {
+      if (!value.length) return "—";
+      return value
+        .map((item) =>
+          item && typeof item === "object" ? JSON.stringify(item) : String(item)
+        )
+        .join(", ");
+    }
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value === "object") {
+      const text = JSON.stringify(value);
+      return text.length > 160 ? `${text.slice(0, 160)}…` : text;
+    }
+    return String(value);
+  };
+
+  const computeChanges = (business) => {
+    const data = business?.pendingChange?.data || {};
+    return Object.keys(data)
+      .filter((key) => !["vendor", "createdAt", "updatedAt", "__v"].includes(key))
+      .map((key) => ({ field: key, before: business[key], after: data[key] }))
+      .filter(
+        (c) => JSON.stringify(c.before ?? null) !== JSON.stringify(c.after ?? null)
+      );
+  };
+
+  const openChangeDetail = async (id) => {
+    setChangeDetailId(id);
+    setChangeDetail(null);
+    setChangeError("");
+    setChangeLoading(true);
+    try {
+      const res = await getAdminBusinessById(id);
+      setChangeDetail(res.data.business);
+    } catch (err) {
+      setChangeError(err.response?.data?.message || "Failed to load vendor changes");
+    } finally {
+      setChangeLoading(false);
+    }
+  };
+
+  const closeChangeDetail = () => {
+    setChangeDetailId(null);
+    setChangeDetail(null);
+    setChangeError("");
   };
 
   const handleAction = async (id, status) => {
@@ -234,6 +295,25 @@ const AdminApprovals = () => {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
+                          {(changeType === "EDIT" || changeType === "DELETE") && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="relative h-8 w-8 p-0"
+                              title="View vendor changes"
+                              onClick={() => openChangeDetail(b._id)}
+                              disabled={changeLoading && changeDetailId === b._id}
+                            >
+                              {changeLoading && changeDetailId === b._id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 animate-ping rounded-full bg-red-500" />
+                              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500" />
+                              <span className="sr-only">View changes</span>
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
@@ -407,6 +487,96 @@ const AdminApprovals = () => {
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={!!changeDetailId}
+        onOpenChange={(open) => !open && closeChangeDetail()}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {changeDetail?.pendingChange?.type === "DELETE"
+                ? "Delete Request"
+                : "Vendor Changes"}
+            </DialogTitle>
+            <DialogDescription>
+              {changeDetail
+                ? `What the vendor submitted for "${changeDetail.name}"`
+                : "Loading vendor changes..."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {changeLoading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading changes...
+            </div>
+          ) : changeError ? (
+            <p className="py-6 text-sm text-destructive">{changeError}</p>
+          ) : changeDetail?.pendingChange?.type === "DELETE" ? (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-400">
+                The vendor requested to delete this business listing.
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Submitted{" "}
+                {changeDetail.pendingChange?.submittedAt
+                  ? new Date(changeDetail.pendingChange.submittedAt).toLocaleString()
+                  : "-"}
+              </p>
+            </div>
+          ) : (
+            (() => {
+              const changes = computeChanges(changeDetail);
+              return (
+                <div className="space-y-4">
+                  <p className="text-xs text-muted-foreground">
+                    Submitted{" "}
+                    {changeDetail?.pendingChange?.submittedAt
+                      ? new Date(
+                          changeDetail.pendingChange.submittedAt
+                        ).toLocaleString()
+                      : "-"}
+                  </p>
+                  {changes.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No field-level differences found.
+                    </p>
+                  ) : (
+                    <div className="max-h-[45vh] space-y-3 overflow-y-auto pr-1">
+                      {changes.map((c) => (
+                        <div
+                          key={c.field}
+                          className="rounded-lg border border-border p-3"
+                        >
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                            {humanizeKey(c.field)}
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                            <span className="max-w-full break-words rounded-md bg-red-50 px-2 py-1 text-red-700 line-through dark:bg-red-950 dark:text-red-400">
+                              {formatDiffValue(c.before)}
+                            </span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="max-w-full break-words rounded-md bg-emerald-50 px-2 py-1 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                              {formatDiffValue(c.after)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeChangeDetail}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!profileConfirm}

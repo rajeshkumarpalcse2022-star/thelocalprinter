@@ -28,6 +28,8 @@ import {
   AlertTriangle,
   Plus,
   Trash2,
+  Search,
+  ChevronsUpDown,
 } from "lucide-react";
 import { createBusiness, getBusinessById, updateBusiness } from "../../services/vendorService";
 import api from "../../services/api";
@@ -39,12 +41,10 @@ import { Button } from "../../components/ui/button";
 import { Switch } from "../../components/ui/switch";
 import { Textarea } from "../../components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../components/ui/select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "../../components/ui/popover";
 
 const STEPS = [
   { label: "Business Info", short: "Info", icon: Building2 },
@@ -146,6 +146,114 @@ const FormField = ({ label, required, error, children, hint }) => (
     {error && <p className="text-xs text-destructive font-medium">{error}</p>}
   </div>
 );
+
+const CategoryCombobox = ({ categories, value, valueLabel = "", onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const selected = categories.find((c) => c._id === value);
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? categories.filter((c) => (c.name || "").toLowerCase().includes(q))
+    : categories;
+
+  const handleSelect = (id) => {
+    onChange(id);
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setQuery("");
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="h-10 w-full justify-between px-3 font-normal"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            {selected?.image && (
+              <img
+                src={selected.image}
+                alt=""
+                className="h-4 w-4 shrink-0 object-contain"
+              />
+            )}
+            <span className="truncate">
+              {selected ? selected.name : valueLabel || "Select a category"}
+            </span>
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="p-0"
+        style={{ width: "var(--radix-popover-trigger-width)" }}
+      >
+        <div className="flex items-center gap-2 border-b px-3">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search category..."
+            autoFocus
+            className="h-11 w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <div className="max-h-[280px] overflow-y-auto p-1">
+          {filtered.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No category found
+            </p>
+          ) : (
+            filtered.map((cat) => (
+              <button
+                type="button"
+                key={cat._id}
+                onClick={() => handleSelect(cat._id)}
+                className={`flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-sm transition-colors hover:bg-muted ${
+                  cat._id === value ? "bg-muted font-medium" : ""
+                }`}
+              >
+                {cat.image && (
+                  <img
+                    src={cat.image}
+                    alt=""
+                    className="h-4 w-4 shrink-0 object-contain"
+                  />
+                )}
+                <span className="min-w-0 flex-1 truncate">{cat.name}</span>
+                {cat._id === value && (
+                  <Check className="h-4 w-4 shrink-0 text-primary" />
+                )}
+              </button>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+};
 
 const TagInput = ({ tags, onChange, placeholder }) => {
   const [input, setInput] = useState("");
@@ -729,24 +837,17 @@ const VendorBusinessForm = () => {
               </div>
             </div>
             <FormField label="Business Category">
-              <Select value={form.categoryId || ""} onValueChange={(val) => {
-                const cat = categories.find((c) => c._id === val);
-                updateField("categoryId", val || null);
-                updateField("category", cat ? cat.name : "");
-                updateField("serviceIds", []);
-              }}>
-                <SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger>
-                <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat._id} value={cat._id}>
-                      <div className="flex items-center gap-2">
-                        {cat.image && <img src={cat.image} alt="" className="h-4 w-4 object-contain" />}
-                        <span>{cat.name}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CategoryCombobox
+                categories={categories}
+                value={form.categoryId || ""}
+                valueLabel={form.category || ""}
+                onChange={(val) => {
+                  const cat = categories.find((c) => c._id === val);
+                  updateField("categoryId", val || null);
+                  updateField("category", cat ? cat.name : "");
+                  updateField("serviceIds", []);
+                }}
+              />
             </FormField>
             {form.categoryId && (() => {
               const selectedCat = categories.find((c) => c._id === form.categoryId);

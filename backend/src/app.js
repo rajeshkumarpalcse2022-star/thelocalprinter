@@ -11,7 +11,6 @@ const vendorRoutes = require("./routes/vendorRoutes");
 const userRoutes = require("./routes/userRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 const chatRoutes = require("./routes/chatRoutes");
-const guideRoutes = require("./routes/guideRoutes");
 const { adminCouponRoutes, couponRoutes } = require("./routes/couponRoutes");
 
 const app = express();
@@ -38,7 +37,6 @@ app.use("/api/vendor", vendorRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/chat", chatRoutes);
-app.use("/api/guides", guideRoutes);
 app.use("/api/admin/coupons", adminCouponRoutes);
 app.use("/api/coupons", couponRoutes);
 
