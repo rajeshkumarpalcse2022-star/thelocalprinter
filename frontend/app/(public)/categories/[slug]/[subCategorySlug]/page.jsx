@@ -7,6 +7,7 @@ import UserBusinessCard from '@/components/user/UserBusinessCard';
 import { ChevronRight } from 'lucide-react';
 import { getActiveCategories } from '@/services/userService';
 import { getSavedCity, onSavedLocationChange } from '@/lib/savedLocation';
+import { mergeCategories } from '@/data/vendorCategories';
 import api from '@/services/api';
 
 export default function SubCategoryPage({ params }) {
@@ -19,8 +20,8 @@ export default function SubCategoryPage({ params }) {
 
   useEffect(() => {
     getActiveCategories()
-      .then((res) => setCategories(res.data?.categories || []))
-      .catch(() => setCategories([]))
+      .then((res) => setCategories(mergeCategories(res.data?.categories || [])))
+      .catch(() => setCategories(mergeCategories([])))
       .finally(() => setLoading(false));
   }, []);
 
@@ -35,22 +36,25 @@ export default function SubCategoryPage({ params }) {
   }, []);
 
   useEffect(() => {
-    if (!subCategory?._id) return;
+    if (!subCategory || !parentCategory) return;
     setBizLoading(true);
-    const params = { serviceId: subCategory._id, limit: 12 };
+    // Match businesses that actually selected this subcategory (serviceIds
+    // stores the same id the vendor form writes — real DB id or the static
+    // pseudo-id for the 9 core categories), plus the saved location.
+    const params = { limit: 12, serviceId: subCategory._id };
     if (savedCity) params.city = savedCity;
     api.get(`/user/public/businesses`, { params })
       .then((res) => setBusinesses(res.data?.data?.businesses || []))
       .catch(() => setBusinesses([]))
       .finally(() => setBizLoading(false));
-  }, [subCategory?._id, savedCity]);
+  }, [subCategory?._id, parentCategory?._id, parentCategory?.name, savedCity]);
 
   if (!loading && !parentCategory) {
     return (
       <div className="bg-brand-light min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-[28px] font-extrabold text-brand-navy mb-4">Category Not Found</h1>
-          <Link href="/categories" className="text-brand-orange font-bold hover:underline">Browse All Categories</Link>
+          <Link href="/" className="text-brand-orange font-bold hover:underline">Browse All Categories</Link>
         </div>
       </div>
     );

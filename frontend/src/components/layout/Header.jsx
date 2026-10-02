@@ -8,6 +8,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Menu, X, MapPin, Search, Crosshair, Loader2, LogOut, LayoutDashboard, ChevronDown, ChevronRight, Heart, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { getActiveCategories, getWishlist, getPublicFilterOptions, getLocationAutocomplete } from '@/services/userService';
+import { mergeCategories } from '@/data/vendorCategories';
 import {
   readSavedLocation,
   saveLocation,
@@ -48,7 +49,7 @@ export default function Header() {
   const mobileLocationRequestIdRef = useRef(0);
   const mobileCitiesRef = useRef([]);
   const mobileLocationWrapperRef = useRef(null);
-  const mobileCategoriesRef = useRef([]);
+  const mobileCategoriesRef = useRef(mergeCategories([]));
   const mobileSearchWrapperRef = useRef(null);
   const profileRef = useRef(null);
   const locationOriginRef = useRef(`header-${Math.random().toString(36).slice(2)}`);
@@ -99,8 +100,8 @@ export default function Header() {
 
   useEffect(() => {
     getActiveCategories()
-      .then((res) => { mobileCategoriesRef.current = res.data?.categories || []; })
-      .catch(() => { mobileCategoriesRef.current = []; });
+      .then((res) => { mobileCategoriesRef.current = mergeCategories(res.data?.categories || []); })
+      .catch(() => { mobileCategoriesRef.current = mergeCategories([]); });
     getPublicFilterOptions()
       .then((res) => { mobileCitiesRef.current = res.data?.cities || []; })
       .catch(() => { mobileCitiesRef.current = []; });
@@ -303,18 +304,21 @@ export default function Header() {
   const computeMobileSuggestions = useCallback((text) => {
     if (!text || !text.trim()) return [];
     const q = text.trim().toLowerCase();
-    const results = [];
+    const categoryResults = [];
+    const subResults = [];
     mobileCategoriesRef.current.forEach((cat) => {
       if (cat.name.toLowerCase().includes(q)) {
-        results.push({ type: 'CATEGORY', name: cat.name, href: `/categories/${cat.slug}` });
+        categoryResults.push({ type: 'CATEGORY', name: cat.name, href: `/categories/${cat.slug}` });
       }
       (cat.services || []).forEach((sub) => {
         if (sub.name.toLowerCase().includes(q)) {
-          results.push({ type: 'SUBCATEGORY', name: sub.name, parentName: cat.name, href: `/categories/${cat.slug}/${sub.slug}` });
+          subResults.push({ type: 'SUBCATEGORY', name: sub.name, parentName: cat.name, href: `/categories/${cat.slug}/${sub.slug}` });
         }
       });
     });
-    return results.slice(0, 12);
+    // Parent categories first (capped so subcategories still get room),
+    // then subcategories — neither gets pushed out by the 12-item limit.
+    return [...categoryResults.slice(0, 6), ...subResults].slice(0, 12);
   }, []);
 
   const handleMobileSearchChange = (e) => {

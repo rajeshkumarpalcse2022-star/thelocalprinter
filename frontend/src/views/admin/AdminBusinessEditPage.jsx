@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { getAdminBusinessById, adminUpdateBusiness } from "../../services/adminService";
 import api from "../../services/api";
+import { mergeCategories } from "../../data/vendorCategories";
 import { uploadToCloudinary, ALLOWED_FOLDERS } from "../../lib/cloudinary";
 import { Card, CardContent } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
@@ -254,7 +255,8 @@ const AdminBusinessEditPage = () => {
   const [submitError, setSubmitError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
-  const [categories, setCategories] = useState([]);
+  // The 9 core categories are hardcoded so they show even if the API/DB is down.
+  const [categories, setCategories] = useState(() => mergeCategories([]));
   const [uploading, setUploading] = useState({});
   const [uploadErrors, setUploadErrors] = useState({});
   const [customServices, setCustomServices] = useState([]);
@@ -269,9 +271,19 @@ const AdminBusinessEditPage = () => {
 
   useEffect(() => {
     api.get("/user/public/categories").then((res) => {
-      setCategories(res.data.data.categories || []);
+      setCategories(mergeCategories(res.data.data.categories || []));
     }).catch(() => {});
   }, []);
+
+  // Business saved without a categoryId (static category): resolve it by name
+  // once categories are available so the sub-category list shows on edit.
+  useEffect(() => {
+    if (form.categoryId || !form.category) return;
+    const match = categories.find(
+      (c) => (c.name || "").trim().toLowerCase() === form.category.trim().toLowerCase()
+    );
+    if (match) updateField("categoryId", match._id);
+  }, [categories, form.categoryId, form.category]);
 
   useEffect(() => {
     if (!id) return;

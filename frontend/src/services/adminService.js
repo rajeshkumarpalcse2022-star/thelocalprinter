@@ -126,9 +126,9 @@ export const updateProfileChangeStatus = async (id, status) => {
 
 // ─── Categories ───
 
-export const getCategories = async (page = 1, search = "") => {
+export const getCategories = async (page = 1, search = "", limit = 50) => {
   const response = await api.get("/admin/categories", {
-    params: { page, search },
+    params: { page, search, limit },
   });
   return response.data;
 };

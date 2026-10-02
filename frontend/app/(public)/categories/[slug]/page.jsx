@@ -3,10 +3,11 @@
 import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import BusinessCard from '@/components/directory/BusinessCard';
+import UserBusinessCard from '@/components/user/UserBusinessCard';
 import { ChevronRight, Layers, Store, Search, Sun, Moon } from 'lucide-react';
 import { getActiveCategories } from '@/services/userService';
 import { getSavedCity, onSavedLocationChange } from '@/lib/savedLocation';
+import { mergeCategories } from '@/data/vendorCategories';
 import api from '@/services/api';
 
 export default function CategoryPage({ params }) {
@@ -33,8 +34,8 @@ export default function CategoryPage({ params }) {
 
   useEffect(() => {
     getActiveCategories()
-      .then((res) => setCategories(res.data?.categories || []))
-      .catch(() => setCategories([]))
+      .then((res) => setCategories(mergeCategories(res.data?.categories || [])))
+      .catch(() => setCategories(mergeCategories([])))
       .finally(() => setLoading(false));
   }, []);
 
@@ -50,13 +51,20 @@ export default function CategoryPage({ params }) {
   useEffect(() => {
     if (!parentCategory?._id) return;
     setBizLoading(true);
-    const params = { categoryId: parentCategory._id, limit: 12 };
+    const params = { limit: 12 };
+    if (parentCategory.isStatic) {
+      // No DB document for this category: match businesses by the stored
+      // category name string instead of a categoryId reference.
+      params.category = parentCategory.name;
+    } else {
+      params.categoryId = parentCategory._id;
+    }
     if (savedCity) params.city = savedCity;
     api.get(`/user/public/businesses`, { params })
       .then((res) => setBusinesses(res.data?.data?.businesses || []))
       .catch(() => setBusinesses([]))
       .finally(() => setBizLoading(false));
-  }, [parentCategory?._id, savedCity]);
+  }, [parentCategory?._id, parentCategory?.isStatic, parentCategory?.name, savedCity]);
 
   if (!loading && !parentCategory) {
     return (
@@ -206,9 +214,10 @@ export default function CategoryPage({ params }) {
             </div>
             <div className="flex flex-wrap gap-3">
               {subcategories.map((sub) => (
-                <div
+                <Link
                   key={sub._id}
-                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[14px] font-semibold border transition-colors select-none ${
+                  href={`/categories/${slug}/${sub.slug}`}
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[14px] font-semibold border transition-colors select-none hover:border-brand-orange hover:text-brand-orange ${
                     isDark
                       ? 'bg-gray-900 border-gray-800 text-gray-300'
                       : 'bg-white border-brand-border text-brand-navy shadow-sm'
@@ -216,7 +225,7 @@ export default function CategoryPage({ params }) {
                 >
                   <span className={`w-1.5 h-1.5 rounded-full ${isDark ? 'bg-brand-orange/60' : 'bg-brand-orange'}`} />
                   {sub.name}
-                </div>
+                </Link>
               ))}
             </div>
           </motion.section>
@@ -254,7 +263,7 @@ export default function CategoryPage({ params }) {
             </div>
           ) : businesses.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {businesses.map((biz) => <BusinessCard key={biz._id} business={biz} />)}
+              {businesses.map((biz) => <UserBusinessCard key={biz._id} business={biz} detailHref={`/businesses/${biz._id}`} />)}
             </div>
           ) : (
             <div className={`flex flex-col items-center justify-center py-20 rounded-2xl border shadow-sm ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-brand-border'}`}>

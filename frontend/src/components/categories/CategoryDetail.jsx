@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { ChevronRight, ChevronLeft, Sun, Moon } from 'lucide-react';
+import { slugify, mergeCategories } from '@/data/vendorCategories';
+import { getActiveCategories } from '@/services/userService';
 
 function useLPTheme() {
   const [theme, setTheme] = useState('light');
@@ -44,18 +46,25 @@ function SectionHeading({ isDark, title, count }) {
   );
 }
 
-function Chip({ isDark, children }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-[13px] font-medium border break-words ${
-        isDark
-          ? 'bg-gray-900 border-gray-800 text-gray-300'
-          : 'bg-white border-brand-border text-brand-navy shadow-sm'
-      }`}
-    >
+function Chip({ isDark, children, href }) {
+  const base = `inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-[13px] font-medium border break-words transition-colors ${
+    isDark
+      ? 'bg-gray-900 border-gray-800 text-gray-300 hover:border-brand-orange hover:text-brand-orange'
+      : 'bg-white border-brand-border text-brand-navy shadow-sm hover:border-brand-orange hover:text-brand-orange'
+  }`;
+  const inner = (
+    <>
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isDark ? 'bg-brand-orange/60' : 'bg-brand-orange'}`} />
       <span className="min-w-0">{children}</span>
-    </span>
+    </>
+  );
+  if (!href) {
+    return <span className={base}>{inner}</span>;
+  }
+  return (
+    <Link href={href} className={`${base} cursor-pointer`} title={`Open ${href}`}>
+      {inner}
+    </Link>
   );
 }
 
@@ -88,6 +97,30 @@ function Reveal({ children, delay = 0 }) {
 export default function CategoryDetail({ content }) {
   const router = useRouter();
   const { isDark, toggle } = useLPTheme();
+  const [dbItems, setDbItems] = useState([]);
+
+  // Subcategories an admin adds later live in the API only — append them so
+  // this guide page keeps matching what the category actually offers.
+  useEffect(() => {
+    if (content.type === 'comparison') return undefined;
+    let alive = true;
+    getActiveCategories()
+      .then((res) => {
+        const all = mergeCategories(res.data?.categories || []);
+        const parent = all.find((c) => c.slug === content.slug);
+        if (!parent || !alive) return;
+        const existing = new Set((content.items || []).map((i) => slugify(i)));
+        setDbItems(
+          (parent.services || [])
+            .map((s) => s.name)
+            .filter((n) => n && !existing.has(slugify(n)))
+        );
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [content]);
 
   const goBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) router.back();
@@ -95,169 +128,97 @@ export default function CategoryDetail({ content }) {
   };
 
   const renderBody = () => {
-    switch (content.type) {
-      case 'grouped-products':
-      case 'service-groups':
-      case 'stand-groups':
-      case 'trend-groups':
-        return (
-          <div className="flex flex-col gap-10 md:gap-12">
-            {content.groups.map((group) => (
-              <Reveal key={group.title}>
-                <SectionHeading isDark={isDark} title={group.title} count={group.items.length} />
-                <div className="flex flex-wrap gap-2.5">
-                  {group.items.map((item) => (
-                    <Chip key={item} isDark={isDark}>{item}</Chip>
-                  ))}
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        );
-      case 'service-deals':
-        return (
+    // T shirt keeps its full comparison table. Every other category renders
+    // one flat list of sub-category chips: no group headings, no descriptions.
+    if (content.type === 'comparison') {
+      return (
+        <div className="flex flex-col gap-8">
           <Reveal>
-            <SectionHeading isDark={isDark} title="Services & Machines" count={content.rows.length} />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {content.rows.map((row) => (
-                <Card key={row.name} isDark={isDark}>
-                  <h3 className={`text-[15px] font-bold mb-1.5 break-words ${isDark ? 'text-gray-100' : 'text-brand-navy'}`}>
-                    {row.name}
-                  </h3>
-                  <p className={`text-[13.5px] leading-relaxed break-words ${isDark ? 'text-gray-400' : 'text-brand-muted'}`}>
-                    {row.deal}
-                  </p>
-                </Card>
-              ))}
-            </div>
+            <Card isDark={isDark}>
+              <p className={`text-[14.5px] leading-relaxed break-words ${isDark ? 'text-gray-300' : 'text-brand-navy'}`}>
+                {content.intro}
+              </p>
+            </Card>
           </Reveal>
-        );
-      case 'simple-list':
-        return (
           <Reveal>
-            <SectionHeading isDark={isDark} title="Services" count={content.items.length} />
-            <div className="flex flex-wrap gap-2.5">
-              {content.items.map((item) => (
-                <Chip key={item} isDark={isDark}>{item}</Chip>
-              ))}
-            </div>
-          </Reveal>
-        );
-      case 'comparison':
-        return (
-          <div className="flex flex-col gap-8">
-            <Reveal>
-              <Card isDark={isDark}>
-                <p className={`text-[14.5px] leading-relaxed break-words ${isDark ? 'text-gray-300' : 'text-brand-navy'}`}>
-                  {content.intro}
-                </p>
-              </Card>
-            </Reveal>
-            <Reveal>
-              <SectionHeading isDark={isDark} title="Printing Method Comparison" />
-              <div
-                className={`overflow-x-auto rounded-2xl border shadow-sm ${
-                  isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-brand-border'
-                }`}
-              >
-                <table className="w-full min-w-[760px] border-collapse text-left">
-                  <thead>
-                    <tr className={isDark ? 'bg-gray-800/60' : 'bg-brand-light'}>
-                      {content.columns.map((col, i) => (
-                        <th
-                          key={col}
-                          className={`px-4 py-3.5 text-[12px] font-bold uppercase tracking-wider whitespace-normal break-words ${
-                            isDark ? 'text-gray-200' : 'text-brand-navy'
-                          } ${i === 0 ? 'sticky left-0 z-10 min-w-[150px]' : 'min-w-[120px]'} ${
-                            i === 0 ? (isDark ? 'bg-gray-800' : 'bg-brand-light') : ''
-                          }`}
-                        >
-                          {col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {content.rows.map((row, ri) => (
-                      <tr
-                        key={row.feature}
-                        className={`border-t ${isDark ? 'border-gray-800' : 'border-brand-border'} ${
-                          ri % 2 === 1 ? (isDark ? 'bg-gray-800/30' : 'bg-brand-light/50') : ''
+            <SectionHeading isDark={isDark} title="Printing Method Comparison" />
+            <div
+              className={`overflow-x-auto rounded-2xl border shadow-sm ${
+                isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-brand-border'
+              }`}
+            >
+              <table className="w-full min-w-[760px] border-collapse text-left">
+                <thead>
+                  <tr className={isDark ? 'bg-gray-800/60' : 'bg-brand-light'}>
+                    {content.columns.map((col, i) => (
+                      <th
+                        key={col}
+                        className={`px-4 py-3.5 text-[12px] font-bold uppercase tracking-wider whitespace-normal break-words ${
+                          isDark ? 'text-gray-200' : 'text-brand-navy'
+                        } ${i === 0 ? 'sticky left-0 z-10 min-w-[150px]' : 'min-w-[130px]'} ${
+                          i === 0 ? (isDark ? 'bg-gray-800' : 'bg-brand-light') : ''
                         }`}
                       >
-                        <th
-                          className={`sticky left-0 z-10 px-4 py-3 text-[13.5px] font-bold break-words ${
-                            isDark ? 'text-gray-100 bg-gray-900' : 'text-brand-navy bg-white'
-                          } ${ri % 2 === 1 ? (isDark ? '!bg-gray-800' : '!bg-[#F1F3F6]') : ''}`}
-                        >
-                          {row.feature}
-                        </th>
-                        {row.values.map((val, vi) => (
-                          <td
-                            key={vi}
-                            className={`px-4 py-3 text-[13.5px] break-words ${isDark ? 'text-gray-300' : 'text-brand-muted'}`}
+                        <span className="block">{col}</span>
+                        {i > 0 && (
+                          <Link
+                            href={`/categories/${content.slug}/${slugify(col)}`}
+                            title={`Find businesses using ${col} in your location`}
+                            className="mt-2.5 inline-flex items-center gap-1 rounded-full border border-brand-orange/40 bg-brand-orange/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wide whitespace-nowrap text-brand-orange transition-colors hover:bg-brand-orange hover:text-white"
                           >
-                            {val}
-                          </td>
-                        ))}
-                      </tr>
+                            Find Businesses
+                            <ChevronRight className="w-3 h-3" />
+                          </Link>
+                        )}
+                      </th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            </Reveal>
-          </div>
-        );
-      case 'bags-and-boxes':
-        return (
-          <div className="flex flex-col gap-10 md:gap-12">
-            <div className="flex flex-col gap-10 md:gap-12">
-              {content.bagGroups.map((group) => (
-                <Reveal key={group.title}>
-                  <SectionHeading isDark={isDark} title={group.title} count={group.items.length} />
-                  <div className="flex flex-wrap gap-2.5">
-                    {group.items.map((item) => (
-                      <Chip key={item} isDark={isDark}>{item}</Chip>
-                    ))}
-                  </div>
-                </Reveal>
-              ))}
-            </div>
-            <Reveal>
-              <SectionHeading isDark={isDark} title={content.boxesTitle} count={content.boxes.length} />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {content.boxes.map((box) => (
-                  <Card key={box.name} isDark={isDark}>
-                    <h3 className={`text-[15px] font-bold mb-1.5 ${isDark ? 'text-brand-orange' : 'text-brand-orange'}`}>
-                      {box.name}
-                    </h3>
-                    <p className={`text-[13.5px] leading-relaxed break-words ${isDark ? 'text-gray-300' : 'text-brand-navy'}`}>
-                      {box.description}
-                    </p>
-                  </Card>
-                ))}
-              </div>
-            </Reveal>
-          </div>
-        );
-      case 'product-grid':
-        return (
-          <Reveal>
-            <SectionHeading isDark={isDark} title="Products" count={content.items.length} />
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-              {content.items.map((item) => (
-                <Card key={item} isDark={isDark} className="!p-4 text-center">
-                  <p className={`text-[14px] font-semibold break-words ${isDark ? 'text-gray-100' : 'text-brand-navy'}`}>
-                    {item}
-                  </p>
-                </Card>
-              ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {content.rows.map((row, ri) => (
+                    <tr
+                      key={row.feature}
+                      className={`border-t ${isDark ? 'border-gray-800' : 'border-brand-border'} ${
+                        ri % 2 === 1 ? (isDark ? 'bg-gray-800/30' : 'bg-brand-light/50') : ''
+                      }`}
+                    >
+                      <th
+                        className={`sticky left-0 z-10 px-4 py-3 text-[13.5px] font-bold break-words ${
+                          isDark ? 'text-gray-100 bg-gray-900' : 'text-brand-navy bg-white'
+                        } ${ri % 2 === 1 ? (isDark ? '!bg-gray-800' : '!bg-[#F1F3F6]') : ''}`}
+                      >
+                        {row.feature}
+                      </th>
+                      {row.values.map((val, vi) => (
+                        <td
+                          key={vi}
+                          className={`px-4 py-3 text-[13.5px] break-words ${isDark ? 'text-gray-300' : 'text-brand-muted'}`}
+                        >
+                          {val}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </Reveal>
-        );
-      default:
-        return null;
+        </div>
+      );
     }
+
+    const items = [...(content.items || []), ...dbItems];
+    return (
+      <Reveal>
+        <div className="flex flex-wrap gap-2.5">
+          {items.map((item) => (
+            <Chip key={item} isDark={isDark} href={`/categories/${content.slug}/${slugify(item)}`}>
+              {item}
+            </Chip>
+          ))}
+        </div>
+      </Reveal>
+    );
   };
 
   return (

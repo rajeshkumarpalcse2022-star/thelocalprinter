@@ -4,6 +4,7 @@ import { MapPin, Search, ChevronRight, AlertCircle, Loader2 } from 'lucide-react
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { getActiveCategories, getPublicFilterOptions, getLocationAutocomplete } from '@/services/userService';
+import { mergeCategories } from '@/data/vendorCategories';
 import {
   readSavedLocation,
   saveManualLocation,
@@ -22,7 +23,7 @@ export default function SearchBar() {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
-  const categoriesRef = useRef([]);
+  const categoriesRef = useRef(mergeCategories([]));
   const citiesRef = useRef([]);
   const wrapperRef = useRef(null);
   const inputRef = useRef(null);
@@ -67,8 +68,8 @@ export default function SearchBar() {
 
   useEffect(() => {
     getActiveCategories()
-      .then((res) => { categoriesRef.current = res.data?.categories || []; })
-      .catch(() => { categoriesRef.current = []; });
+      .then((res) => { categoriesRef.current = mergeCategories(res.data?.categories || []); })
+      .catch(() => { categoriesRef.current = mergeCategories([]); });
     getPublicFilterOptions()
       .then((res) => { citiesRef.current = res.data?.cities || []; })
       .catch(() => { citiesRef.current = []; });
@@ -92,20 +93,23 @@ export default function SearchBar() {
   const computeSuggestions = useCallback((text) => {
     if (!text || !text.trim()) return [];
     const q = text.trim().toLowerCase();
-    const results = [];
+    const categoryResults = [];
+    const subResults = [];
 
     categoriesRef.current.forEach((cat) => {
       if (cat.name.toLowerCase().includes(q)) {
-        results.push({ type: 'CATEGORY', name: cat.name, href: `/categories/${cat.slug}` });
+        categoryResults.push({ type: 'CATEGORY', name: cat.name, href: `/categories/${cat.slug}` });
       }
       (cat.services || []).forEach((sub) => {
         if (sub.name.toLowerCase().includes(q)) {
-          results.push({ type: 'SUBCATEGORY', name: sub.name, parentName: cat.name, href: `/categories/${cat.slug}/${sub.slug}` });
+          subResults.push({ type: 'SUBCATEGORY', name: sub.name, parentName: cat.name, href: `/categories/${cat.slug}/${sub.slug}` });
         }
       });
     });
 
-    return results.slice(0, 12);
+    // Parent categories first (capped so subcategories still get room),
+    // then subcategories — neither gets pushed out by the 12-item limit.
+    return [...categoryResults.slice(0, 6), ...subResults].slice(0, 12);
   }, []);
 
   useEffect(() => {

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, Fragment } from "react";
+import { useState, useEffect, useRef, useMemo, Fragment } from "react";
+import Link from "next/link";
 import {
   Tags,
   Plus,
@@ -14,7 +15,9 @@ import {
   Upload,
   X,
   Eye,
+  ExternalLink,
 } from "lucide-react";
+import { mergeCategories, isCoreCategory, LOCKED_CATEGORY_SLUG } from "../../data/vendorCategories";
 import {
   getCategories,
   createCategory,
@@ -65,9 +68,11 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 
+const PAGE_SIZE = 10;
+const FETCH_LIMIT = 500;
+
 const AdminCategories = () => {
   const [categories, setCategories] = useState([]);
-  const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -82,6 +87,8 @@ const AdminCategories = () => {
     description: "",
     type: "parent",
     parentId: "",
+    parentName: "",
+    parentIsStatic: false,
     image: "",
   });
   const [saving, setSaving] = useState(false);
@@ -92,7 +99,6 @@ const AdminCategories = () => {
   const [expandedRows, setExpandedRows] = useState({});
   const [viewTarget, setViewTarget] = useState(null);
   const [subcategoryNames, setSubcategoryNames] = useState([""]);
-  const debounceRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const formatDate = (date) => {
@@ -107,9 +113,8 @@ const AdminCategories = () => {
     try {
       setLoading(true);
       setError("");
-      const res = await getCategories(p, q);
+      const res = await getCategories(p, q, FETCH_LIMIT);
       setCategories(res.data.categories);
-      setPagination(res.data.pagination);
     } catch (err) {
       setError(err.response?.data?.message || "Failed to load categories");
     } finally {
@@ -118,29 +123,49 @@ const AdminCategories = () => {
   };
 
   useEffect(() => {
-    fetchCategories(page, search);
-  }, [page]);
+    // One fetch, then search + pagination run on the merged list so the 9
+    // core categories and DB rows never repeat across pages.
+    fetchCategories(1, "");
+  }, []);
 
   const handleSearchChange = (e) => {
-    const value = e.target.value;
-    setSearch(value);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setPage(1);
-      fetchCategories(1, value);
-    }, 400);
+    setSearch(e.target.value);
+    setPage(1);
   };
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    if (debounceRef.current) clearTimeout(debounceRef.current);
     setPage(1);
-    fetchCategories(1, search);
   };
 
   const toggleRow = (id) => {
     setExpandedRows((prev) => ({ ...prev, [id]: !prev[id] }));
   };
+
+  // DB categories + the 9 core categories (always listed, even if the API
+  // failed). Core-only entries carry isStatic:true → no edit/delete actions.
+  const displayCategories = useMemo(() => {
+    const merged = mergeCategories(categories);
+    const q = search.trim().toLowerCase();
+    if (!q) return merged;
+    return merged.filter(
+      (c) => (c.name || "").toLowerCase().includes(q)
+    );
+  }, [categories, search]);
+
+  const totalPages = Math.max(1, Math.ceil(displayCategories.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = displayCategories.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
+
+  // Parent picker for the "Add Subcategory" dialog — includes the core
+  // categories (T shirt excluded, its subcategory list is hardcoded).
+  const parentOptions = useMemo(
+    () => mergeCategories(categories).filter((c) => c.slug !== LOCKED_CATEGORY_SLUG),
+    [categories]
+  );
 
   const openCreateParent = () => {
     setEditing(null);
@@ -151,13 +176,15 @@ const AdminCategories = () => {
       description: "",
       type: "parent",
       parentId: "",
+      parentName: "",
+      parentIsStatic: false,
       image: "",
     });
     setFormError("");
     setShowForm(true);
   };
 
-  const openCreateSubcategory = (parentId) => {
+  const openCreateSubcategory = (parent) => {
     setEditing(null);
     setEditingType("subcategory");
     setForm({
@@ -165,7 +192,9 @@ const AdminCategories = () => {
       slug: "",
       description: "",
       type: "subcategory",
-      parentId: parentId || "",
+      parentId: parent?._id || parent || "",
+      parentName: parent?.name || "",
+      parentIsStatic: !!parent?.isStatic,
       image: "",
     });
     setSubcategoryNames([""]);
@@ -183,6 +212,8 @@ const AdminCategories = () => {
         description: cat.description || "",
         type: "subcategory",
         parentId: cat.parentId?._id || cat.parentId || "",
+        parentName: cat.parentId?.name || "",
+        parentIsStatic: !!cat.parentId?.isStatic,
         image: "",
       });
     } else {
@@ -192,6 +223,8 @@ const AdminCategories = () => {
         description: cat.description || "",
         type: "parent",
         parentId: "",
+        parentName: "",
+        parentIsStatic: false,
         image: cat.image || "",
       });
     }
@@ -277,10 +310,24 @@ const AdminCategories = () => {
       } else {
         if (editingType === "subcategory") {
           const validNames = subcategoryNames.filter((n) => n.trim());
+          // A core category lives only in code until an admin adds a
+          // subcategory → create its parent doc first, then attach subs.
+          let parentId = form.parentId;
+          const parentInDb = categories.some((c) => c._id === form.parentId);
+          if (!parentInDb) {
+            const created = await createCategory({
+              name: form.parentName,
+              type: "parent",
+            });
+            parentId = created?.data?.category?._id;
+            if (!parentId) {
+              throw new Error("Could not prepare parent category");
+            }
+          }
           for (const name of validNames) {
             await createSubcategory({
               name: name.trim(),
-              parentId: form.parentId,
+              parentId,
             });
           }
         } else {
@@ -293,7 +340,7 @@ const AdminCategories = () => {
         }
       }
       setShowForm(false);
-      fetchCategories(page, search);
+      fetchCategories(1, "");
     } catch (err) {
       setFormError(err.response?.data?.message || "Failed to save");
     } finally {
@@ -306,7 +353,7 @@ const AdminCategories = () => {
       setActionLoading(id);
       setError("");
       await toggleCategoryStatus(id);
-      fetchCategories(page, search);
+      fetchCategories(1, "");
     } catch (err) {
       setError(err.response?.data?.message || "Failed to toggle status");
     } finally {
@@ -325,7 +372,7 @@ const AdminCategories = () => {
         await deleteCategory(deleteTarget._id);
       }
       setDeleteTarget(null);
-      fetchCategories(page, search);
+      fetchCategories(1, "");
     } catch (err) {
       setError(err.response?.data?.message || "Failed to delete");
     } finally {
@@ -373,16 +420,14 @@ const AdminCategories = () => {
                 className="pl-9"
               />
             </div>
-            {pagination && (
-              <span className="text-sm text-muted-foreground whitespace-nowrap">
-                {pagination.total} categor{pagination.total !== 1 ? "ies" : "y"}
-              </span>
-            )}
+            <span className="text-sm text-muted-foreground whitespace-nowrap">
+              {displayCategories.length} categor{displayCategories.length !== 1 ? "ies" : "y"}
+            </span>
           </div>
 
           {loading ? (
             <PageLoader text="Loading categories..." />
-          ) : categories.length === 0 ? (
+          ) : displayCategories.length === 0 ? (
             <EmptyState
               icon={Tags}
               title="No Categories"
@@ -407,7 +452,7 @@ const AdminCategories = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {categories.map((cat) => (
+                  {pageItems.map((cat) => (
                     <Fragment key={cat._id}>
                       <TableRow>
                         <TableCell>
@@ -438,7 +483,35 @@ const AdminCategories = () => {
                               </div>
                             )}
                             <div className="min-w-0">
-                              <p className="font-medium truncate">{cat.name}</p>
+                              <p className="font-medium">
+                                <Link
+                                  href={`/categories/${cat.slug}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex max-w-full items-center gap-1 truncate hover:text-brand-orange transition-colors"
+                                  title={`Open /categories/${cat.slug}`}
+                                >
+                                  <span className="truncate">{cat.name}</span>
+                                  <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                                </Link>
+                              </p>
+                              {cat.services && cat.services.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1 md:hidden">
+                                  {cat.services.map((sub) => (
+                                    <Link
+                                      key={sub._id}
+                                      href={`/categories/${cat.slug}/${sub.slug}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title={`Open /categories/${cat.slug}/${sub.slug}`}
+                                    >
+                                      <Badge variant="secondary" className="text-xs font-normal hover:bg-brand-orange/15 hover:text-brand-orange transition-colors">
+                                        {sub.name}
+                                      </Badge>
+                                    </Link>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </TableCell>
@@ -446,9 +519,17 @@ const AdminCategories = () => {
                           <div className="flex flex-wrap gap-1">
                             {cat.services && cat.services.length > 0 ? (
                               cat.services.map((sub) => (
-                                <Badge key={sub._id} variant="secondary" className="text-xs">
-                                  {sub.name}
-                                </Badge>
+                                <Link
+                                  key={sub._id}
+                                  href={`/categories/${cat.slug}/${sub.slug}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title={`Open /categories/${cat.slug}/${sub.slug}`}
+                                >
+                                  <Badge variant="secondary" className="text-xs font-normal hover:bg-brand-orange/15 hover:text-brand-orange transition-colors">
+                                    {sub.name}
+                                  </Badge>
+                                </Link>
                               ))
                             ) : (
                               <span className="text-muted-foreground text-sm">—</span>
@@ -456,9 +537,16 @@ const AdminCategories = () => {
                           </div>
                         </TableCell>
                         <TableCell className="hidden sm:table-cell">
-                          <Badge variant="outline" className="font-mono text-xs">
-                            {cat.slug}
-                          </Badge>
+                          <Link
+                            href={`/categories/${cat.slug}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`Open /categories/${cat.slug}`}
+                          >
+                            <Badge variant="outline" className="font-mono text-xs hover:border-brand-orange hover:text-brand-orange transition-colors">
+                              /categories/{cat.slug}
+                            </Badge>
+                          </Link>
                         </TableCell>
                         <TableCell>
                           <StatusBadge status={cat.isActive ? "active" : "inactive"} />
@@ -492,37 +580,60 @@ const AdminCategories = () => {
                                 <Eye className="mr-2 h-4 w-4" />
                                 View
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => openEdit(cat, "parent")}>
-                                <Edit2 className="mr-2 h-4 w-4" />
-                                Edit
+                              <DropdownMenuItem asChild>
+                                <Link
+                                  href={`/categories/${cat.slug}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  <ExternalLink className="mr-2 h-4 w-4" />
+                                  Open Public Page
+                                </Link>
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => openCreateSubcategory(cat._id)}>
-                                <Plus className="mr-2 h-4 w-4" />
-                                Add Subcategory
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleToggle(cat._id)}
-                                disabled={actionLoading === cat._id}
-                              >
-                                {actionLoading === cat._id ? (
-                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Power className="mr-2 h-4 w-4" />
+                              {!cat.isStatic && !isCoreCategory(cat.slug) && (
+                                <>
+                                  <DropdownMenuItem onClick={() => openEdit(cat, "parent")}>
+                                    <Edit2 className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => openCreateSubcategory(cat)}>
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Add Subcategory
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => handleToggle(cat._id)}
+                                    disabled={actionLoading === cat._id}
+                                  >
+                                    {actionLoading === cat._id ? (
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Power className="mr-2 h-4 w-4" />
+                                    )}
+                                    {cat.isActive ? "Deactivate" : "Activate"}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    onClick={() => {
+                                      setDeleteTarget(cat);
+                                      setDeleteType("parent");
+                                    }}
+                                    disabled={actionLoading === cat._id}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {isCoreCategory(cat.slug) &&
+                                cat.slug !== LOCKED_CATEGORY_SLUG && (
+                                  <DropdownMenuItem
+                                    onClick={() => openCreateSubcategory(cat)}
+                                  >
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Add Subcategory
+                                  </DropdownMenuItem>
                                 )}
-                                {cat.isActive ? "Deactivate" : "Activate"}
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                onClick={() => {
-                                  setDeleteTarget(cat);
-                                  setDeleteType("parent");
-                                }}
-                                disabled={actionLoading === cat._id}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
@@ -533,16 +644,31 @@ const AdminCategories = () => {
                           <TableRow key={sub._id} className="bg-muted/30">
                             <TableCell></TableCell>
                             <TableCell>
-                              <div className="pl-6 flex items-center gap-2">
-                                <div className="h-2 w-2 rounded-full bg-muted-foreground/30" />
-                                <p className="text-sm">{sub.name}</p>
+                              <div className="pl-6 flex items-center gap-2 min-w-0">
+                                <div className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground/30" />
+                                <Link
+                                  href={`/categories/${cat.slug}/${sub.slug}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-sm truncate hover:text-brand-orange transition-colors"
+                                  title={`Open /categories/${cat.slug}/${sub.slug}`}
+                                >
+                                  {sub.name}
+                                </Link>
                               </div>
                             </TableCell>
                             <TableCell className="hidden md:table-cell"></TableCell>
                             <TableCell className="hidden sm:table-cell">
-                              <Badge variant="outline" className="font-mono text-xs">
-                                {sub.slug}
-                              </Badge>
+                              <Link
+                                href={`/categories/${cat.slug}/${sub.slug}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={`Open /categories/${cat.slug}/${sub.slug}`}
+                              >
+                                <Badge variant="outline" className="font-mono text-xs hover:border-brand-orange hover:text-brand-orange transition-colors">
+                                  /{sub.slug}
+                                </Badge>
+                              </Link>
                             </TableCell>
                             <TableCell>
                               <StatusBadge status={sub.isActive ? "active" : "inactive"} />
@@ -572,22 +698,36 @@ const AdminCategories = () => {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => openEdit(sub, "subcategory")}>
-                                    <Edit2 className="mr-2 h-4 w-4" />
-                                    Edit
+                                  <DropdownMenuItem asChild>
+                                    <Link
+                                      href={`/categories/${cat.slug}/${sub.slug}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      <ExternalLink className="mr-2 h-4 w-4" />
+                                      Open Public Page
+                                    </Link>
                                   </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    className="text-destructive focus:text-destructive"
-                                    onClick={() => {
-                                      setDeleteTarget(sub);
-                                      setDeleteType("subcategory");
-                                    }}
-                                    disabled={actionLoading === sub._id}
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete
-                                  </DropdownMenuItem>
+                                  {!sub.isStatic && (
+                                    <>
+                                      <DropdownMenuItem onClick={() => openEdit(sub, "subcategory")}>
+                                        <Edit2 className="mr-2 h-4 w-4" />
+                                        Edit
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive"
+                                        onClick={() => {
+                                          setDeleteTarget(sub);
+                                          setDeleteType("subcategory");
+                                        }}
+                                        disabled={actionLoading === sub._id}
+                                      >
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Delete
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>
@@ -598,25 +738,27 @@ const AdminCategories = () => {
                 </TableBody>
               </Table>
 
-              {pagination && pagination.pages > 1 && (
-                <div className="flex items-center justify-between border-t px-6 py-4">
+              {totalPages > 1 && (
+                <div className="flex flex-col gap-3 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                   <p className="text-sm text-muted-foreground">
-                    Page {pagination.page} of {pagination.pages}
+                    Page {currentPage} of {totalPages}
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={pagination.page <= 1}
-                      onClick={() => setPage((p) => p - 1)}
+                      className="h-9 flex-1 sm:flex-none"
+                      disabled={currentPage <= 1}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
                     >
                       Previous
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={pagination.page >= pagination.pages}
-                      onClick={() => setPage((p) => p + 1)}
+                      className="h-9 flex-1 sm:flex-none"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     >
                       Next
                     </Button>
@@ -685,13 +827,21 @@ const AdminCategories = () => {
                 </Label>
                 <Select
                   value={form.parentId}
-                  onValueChange={(val) => setForm((prev) => ({ ...prev, parentId: val }))}
+                  onValueChange={(val) => {
+                    const parent = parentOptions.find((c) => c._id === val);
+                    setForm((prev) => ({
+                      ...prev,
+                      parentId: val,
+                      parentName: parent?.name || "",
+                      parentIsStatic: !!parent?.isStatic,
+                    }));
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select parent category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories.map((cat) => (
+                    {parentOptions.map((cat) => (
                       <SelectItem key={cat._id} value={cat._id}>
                         {cat.name}
                       </SelectItem>
