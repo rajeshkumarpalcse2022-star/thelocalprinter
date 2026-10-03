@@ -179,6 +179,7 @@ const AdminCategories = () => {
       parentName: "",
       parentIsStatic: false,
       image: "",
+      kind: "business",
     });
     setFormError("");
     setShowForm(true);
@@ -226,6 +227,7 @@ const AdminCategories = () => {
         parentName: "",
         parentIsStatic: false,
         image: cat.image || "",
+        kind: cat.kind || "business",
       });
     }
     setFormError("");
@@ -305,6 +307,7 @@ const AdminCategories = () => {
             name: form.name.trim(),
             description: form.description,
             image: form.image,
+            kind: form.kind || "business",
           });
         }
       } else {
@@ -336,6 +339,7 @@ const AdminCategories = () => {
             description: form.description,
             type: "parent",
             image: form.image,
+            kind: form.kind || "business",
           });
         }
       }
@@ -494,6 +498,11 @@ const AdminCategories = () => {
                                   <span className="truncate">{cat.name}</span>
                                   <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
                                 </Link>
+                                {cat.kind === "staffing" && (
+                                  <Badge className="ml-1.5 text-[10px] font-semibold">
+                                    Staffing
+                                  </Badge>
+                                )}
                               </p>
                               {cat.services && cat.services.length > 0 && (
                                 <div className="flex flex-wrap gap-1 mt-1 md:hidden">
@@ -897,6 +906,28 @@ const AdminCategories = () => {
                   placeholder="e.g. Printing, Business Cards..."
                   autoFocus
                 />
+              </div>
+            )}
+
+            {editingType === "parent" && (
+              <div className="space-y-2">
+                <Label htmlFor="cat-kind">Category Kind</Label>
+                <Select
+                  value={form.kind || "business"}
+                  onValueChange={(val) => setForm((prev) => ({ ...prev, kind: val }))}
+                >
+                  <SelectTrigger id="cat-kind">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="business">Business (shops & services)</SelectItem>
+                    <SelectItem value="staffing">Staffing (people to hire)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Staffing categories are excluded from the business search and vendor
+                  category picker.
+                </p>
               </div>
             )}
 

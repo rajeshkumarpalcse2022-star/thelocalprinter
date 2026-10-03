@@ -5,7 +5,7 @@ const cloudinary = require("../config/cloudinary");
 const router = express.Router();
 
 router.use(authenticateUser);
-router.use(authorizeRole("VENDOR"));
+router.use(authorizeRole("VENDOR", "POSTER_BOY"));
 
 router.post("/upload-signature", (req, res) => {
   try {
@@ -21,6 +21,7 @@ router.post("/upload-signature", (req, res) => {
       "local-printer/vendor-verification/outdoor-images",
       "local-printer/vendor-verification/indoor-images",
       "local-printer/vendor-verification/slideshow-images",
+      "local-printer/posterboy/work-media",
     ];
     if (!allowedFolders.includes(folder)) {
       return res.status(400).json({ message: "Invalid folder" });

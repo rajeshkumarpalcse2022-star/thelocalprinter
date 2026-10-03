@@ -6,6 +6,7 @@ const ALLOWED_FOLDERS = {
   outdoorImage: "local-printer/vendor-verification/outdoor-images",
   indoorImage: "local-printer/vendor-verification/indoor-images",
   slideshowImage: "local-printer/vendor-verification/slideshow-images",
+  posterBoyWorkMedia: "local-printer/posterboy/work-media",
 };
 
 const VIDEO_TYPES = ["video/mp4", "video/mov", "video/avi", "video/webm", "video/quicktime", "video/x-msvideo", "video/x-matroska"];

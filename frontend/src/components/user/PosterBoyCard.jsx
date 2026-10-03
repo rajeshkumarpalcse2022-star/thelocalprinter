@@ -1,0 +1,217 @@
+"use client";
+
+import { useState } from "react";
+import {
+  MapPin,
+  Loader2,
+  Languages,
+  Megaphone,
+  Phone,
+  ShieldCheck,
+  MessageCircle,
+  BadgeCheck,
+} from "lucide-react";
+import { Card, CardContent } from "../ui/card";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import CopyableId from "../admin/CopyableId";
+import WatermarkLogo from "../media/WatermarkLogo";
+import WatermarkDownloadButton from "../media/WatermarkDownloadButton";
+import { revealPosterBoyContact } from "@/services/userService";
+
+/**
+ * Public poster boy card. Shows only allowlisted public fields — never the
+ * Aadhaar number, email or raw phone number (contact is revealed on demand).
+ */
+const PosterBoyCard = ({ posterBoy: p }) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [contact, setContact] = useState(null);
+
+  if (!p) return null;
+
+  const skills = Array.isArray(p.skills) ? p.skills : [];
+  const languages = Array.isArray(p.languages) ? p.languages : [];
+
+  const isGpsVerified = !!(
+    p.gpsCoordinates &&
+    p.gpsCoordinates.lat !== null &&
+    p.gpsCoordinates.lng !== null &&
+    Number.isFinite(Number(p.gpsCoordinates.lat)) &&
+    Number.isFinite(Number(p.gpsCoordinates.lng))
+  );
+
+  const directionsHref = isGpsVerified
+    ? `https://www.google.com/maps/dir/?api=1&destination=${Number(p.gpsCoordinates.lat)},${Number(p.gpsCoordinates.lng)}`
+    : "";
+
+  const handleContact = async (e) => {
+    e?.stopPropagation?.();
+    if (contact || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await revealPosterBoyContact(p._id);
+      const data = res?.data || {};
+      setContact(data.whatsappNumber || data.phone || "");
+    } catch (err) {
+      setError(err?.response?.data?.message || "Could not fetch contact. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card className="overflow-hidden flex flex-col">
+      <div className="h-40 bg-gradient-to-br from-orange-50 to-amber-100 dark:from-orange-950/30 dark:to-amber-950/30 flex items-center justify-center text-brand-orange relative overflow-hidden shrink-0">
+        {p.coverImage ? (
+          <img
+            src={p.coverImage}
+            alt={p.fullName || "Poster Boy"}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <Megaphone size={36} />
+        )}
+        {p.coverImage && <WatermarkLogo position="bottom-right" size="sm" />}
+        {p.coverImage && (
+          <WatermarkDownloadButton
+            url={p.coverImage}
+            position="bottom-right"
+            filename={`poster-boy-${p.publicId || "work"}-work-photo.jpg`}
+            ariaLabel="Download work photo with website logo"
+            className="absolute bottom-2 left-2 z-30"
+          />
+        )}
+        <div className="absolute top-2.5 left-2.5 z-10 flex flex-col items-start gap-1.5">
+          <span className="inline-flex items-center gap-1 bg-emerald-600/95 text-white text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full backdrop-blur-sm shadow-sm">
+            <ShieldCheck size={12} className="shrink-0" />
+            Verified
+          </span>
+          {isGpsVerified && (
+            <span className="inline-flex items-center gap-1 bg-black/65 text-white text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full backdrop-blur-sm">
+              <BadgeCheck size={12} className="shrink-0" />
+              GPS Verified
+            </span>
+          )}
+        </div>
+      </div>
+
+      <CardContent className="p-4 flex flex-col gap-1.5 flex-1">
+        <h3 className="text-sm font-bold text-foreground truncate">
+          {p.fullName || "Poster Boy"}
+        </h3>
+
+        {p.publicId && (
+          <div className="flex items-center gap-1.5 min-w-0 text-xs">
+            <span className="text-muted-foreground shrink-0">Poster ID:</span>
+            <CopyableId id={p.publicId} />
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-1">
+          <Badge variant="secondary" className="text-[10px]">
+            Poster Boy
+          </Badge>
+          {skills.slice(0, 3).map((skill) => (
+            <Badge key={skill} variant="outline" className="text-[9px]">
+              {skill}
+            </Badge>
+          ))}
+          {skills.length > 3 && (
+            <Badge variant="outline" className="text-[9px]">
+              +{skills.length - 3} more
+            </Badge>
+          )}
+        </div>
+
+        {languages.length > 0 && (
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Languages size={12} className="shrink-0" />
+            <span className="truncate">{languages.slice(0, 3).join(", ")}</span>
+            {languages.length > 3 && <span>+{languages.length - 3} more</span>}
+          </p>
+        )}
+
+        {(p.city || p.address) && (
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <MapPin size={12} className="shrink-0" />
+            {directionsHref ? (
+              <a
+                href={directionsHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Get directions"
+                className="truncate hover:text-primary hover:underline underline-offset-2"
+              >
+                {p.city}
+                {p.address ? `, ${p.address}` : ""}
+              </a>
+            ) : (
+              <span className="truncate">
+                {p.city}
+                {p.address ? `, ${p.address}` : ""}
+              </span>
+            )}
+            {p.distance != null && (
+              <span className="inline-flex items-center gap-0.5 shrink-0 text-primary font-medium">
+                {p.distance} km
+              </span>
+            )}
+          </p>
+        )}
+
+        <div className="pt-1 mt-auto">
+          {contact ? (
+            <div className="flex flex-col gap-2">
+              <a
+                href={`https://wa.me/${String(contact).replace(/\D/g, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center justify-center gap-1 w-full px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors"
+              >
+                <MessageCircle size={14} /> WhatsApp {contact}
+              </a>
+              <a
+                href={`tel:${contact}`}
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center justify-center gap-1 w-full px-3 py-2 rounded-lg border border-brand-border bg-background hover:bg-brand-light text-xs font-bold text-brand-navy transition-colors"
+              >
+                <Phone size={14} /> Call {contact}
+              </a>
+            </div>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-1 text-xs font-semibold hover:text-primary hover:border-primary/40"
+                disabled={loading}
+                onClick={handleContact}
+              >
+                {loading ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Phone size={14} />
+                )}
+                {loading ? "Fetching..." : "Contact"}
+              </Button>
+              {p.contactHint && (
+                <p className="mt-1 text-center text-[11px] text-muted-foreground">
+                  {p.contactHint}
+                </p>
+              )}
+              {error && (
+                <p className="mt-1 text-center text-[11px] text-red-500">{error}</p>
+              )}
+            </>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+export default PosterBoyCard;

@@ -20,6 +20,7 @@ import {
   Package,
   MessageCircle,
   ClipboardCheck,
+  Megaphone,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -42,10 +43,14 @@ const navItemsByRole = {
   vendorPending: [
     { to: "/vendor/businesses", icon: Building2, label: "My Businesses" },
   ],
+  poster_boy: [
+    { to: "/posterboy/dashboard", icon: Megaphone, label: "Dashboard" },
+  ],
   admin: [
     { to: "/admin/dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { to: "/admin/approvals", icon: ClipboardCheck, label: "Approvals", showBadge: true },
     { to: "/admin/vendors", icon: Store, label: "Vendors" },
+    { to: "/admin/posterboys", icon: Megaphone, label: "Poster Boys" },
     { to: "/admin/users", icon: Users, label: "Users" },
     { to: "/admin/businesses", icon: Building2, label: "Businesses" },
     { to: "/admin/categories", icon: Tag, label: "Categories" },
@@ -59,12 +64,14 @@ const roleIndicatorColors = {
   admin: "bg-violet-500",
   vendor: "bg-orange-500",
   user: "bg-blue-500",
+  poster_boy: "bg-emerald-500",
 };
 
 const roleAvatarColors = {
   admin: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   vendor: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
   user: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  poster_boy: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
 };
 
 export function AppSidebar({

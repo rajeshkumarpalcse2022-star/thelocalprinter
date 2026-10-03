@@ -4,8 +4,9 @@ import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import UserBusinessCard from '@/components/user/UserBusinessCard';
+import PosterBoyCard from '@/components/user/PosterBoyCard';
 import { ChevronRight, Layers, Store, Search, Sun, Moon } from 'lucide-react';
-import { getActiveCategories } from '@/services/userService';
+import { getActiveCategories, getPublicPosterBoys } from '@/services/userService';
 import { getSavedCity, onSavedLocationChange } from '@/lib/savedLocation';
 import { mergeCategories } from '@/data/vendorCategories';
 import api from '@/services/api';
@@ -40,6 +41,9 @@ export default function CategoryPage({ params }) {
   }, []);
 
   const parentCategory = categories.find((c) => c.slug === slug);
+  // Staffing categories (e.g. "Poster Boy") list people, not businesses.
+  const isStaffing = parentCategory?.kind === 'staffing';
+  const [posterBoys, setPosterBoys] = useState([]);
 
   // Listings follow the saved location (auto-detected or typed by the visitor)
   // and refetch whenever it changes.
@@ -51,6 +55,17 @@ export default function CategoryPage({ params }) {
   useEffect(() => {
     if (!parentCategory?._id) return;
     setBizLoading(true);
+    if (isStaffing) {
+      setBusinesses([]);
+      const params = { limit: 12, categoryId: parentCategory._id };
+      if (savedCity) params.city = savedCity;
+      getPublicPosterBoys(params)
+        .then((res) => setPosterBoys(res.data?.posterBoys || []))
+        .catch(() => setPosterBoys([]))
+        .finally(() => setBizLoading(false));
+      return;
+    }
+    setPosterBoys([]);
     const params = { limit: 12 };
     if (parentCategory.isStatic) {
       // No DB document for this category: match businesses by the stored
@@ -64,7 +79,7 @@ export default function CategoryPage({ params }) {
       .then((res) => setBusinesses(res.data?.data?.businesses || []))
       .catch(() => setBusinesses([]))
       .finally(() => setBizLoading(false));
-  }, [parentCategory?._id, parentCategory?.isStatic, parentCategory?.name, savedCity]);
+  }, [parentCategory?._id, parentCategory?.isStatic, parentCategory?.name, isStaffing, savedCity]);
 
   if (!loading && !parentCategory) {
     return (
@@ -155,7 +170,7 @@ export default function CategoryPage({ params }) {
                     </div>
                     <div>
                       <p className="text-[18px] font-bold text-white leading-none">{subcategories.length}</p>
-                      <p className="text-[11px] text-white/40 font-medium mt-0.5">Services</p>
+                      <p className="text-[11px] text-white/40 font-medium mt-0.5">{isStaffing ? 'Skills' : 'Services'}</p>
                     </div>
                   </div>
                 )}
@@ -164,10 +179,10 @@ export default function CategoryPage({ params }) {
                   <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
                     <Store className="w-4 h-4 text-brand-orange" />
                   </div>
-                  <div>
-                    <p className="text-[18px] font-bold text-white leading-none">{bizLoading ? '...' : businesses.length}</p>
-                    <p className="text-[11px] text-white/40 font-medium mt-0.5">Businesses</p>
-                  </div>
+                    <div>
+                      <p className="text-[18px] font-bold text-white leading-none">{bizLoading ? '...' : (isStaffing ? posterBoys.length : businesses.length)}</p>
+                      <p className="text-[11px] text-white/40 font-medium mt-0.5">{isStaffing ? 'Poster Boys' : 'Businesses'}</p>
+                    </div>
                 </div>
               </motion.div>
             </div>
@@ -206,7 +221,7 @@ export default function CategoryPage({ params }) {
             <div className="flex items-center gap-3 mb-5">
               <div className={`w-1 h-6 rounded-full bg-brand-orange`} />
               <h2 className={`text-[20px] font-extrabold ${isDark ? 'text-gray-100' : 'text-brand-navy'}`}>
-                Available Services
+                {isStaffing ? 'Available Skills' : 'Available Services'}
               </h2>
               <span className={`text-[13px] font-medium px-2.5 py-0.5 rounded-full ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-brand-orange/10 text-brand-orange'}`}>
                 {subcategories.length}
@@ -241,11 +256,15 @@ export default function CategoryPage({ params }) {
           <div className="flex items-center gap-3 mb-6">
             <div className={`w-1 h-6 rounded-full bg-brand-orange`} />
             <h2 className={`text-[20px] font-extrabold ${isDark ? 'text-gray-100' : 'text-brand-navy'}`}>
-              {bizLoading ? 'Loading Businesses...' : `${categoryName} Businesses`}
+              {bizLoading
+                ? 'Loading...'
+                : isStaffing
+                  ? `${categoryName} Poster Boys`
+                  : `${categoryName} Businesses`}
             </h2>
             {!bizLoading && (
               <span className={`text-[13px] font-medium px-2.5 py-0.5 rounded-full ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-brand-orange/10 text-brand-orange'}`}>
-                {businesses.length}
+                {isStaffing ? posterBoys.length : businesses.length}
               </span>
             )}
             {!bizLoading && savedCity && (
@@ -261,18 +280,24 @@ export default function CategoryPage({ params }) {
                 <div key={i} className={`${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-brand-border'} rounded-2xl border h-[280px] animate-pulse`} />
               ))}
             </div>
-          ) : businesses.length > 0 ? (
+          ) : (isStaffing ? posterBoys.length > 0 : businesses.length > 0) ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {businesses.map((biz) => <UserBusinessCard key={biz._id} business={biz} detailHref={`/businesses/${biz._id}`} />)}
+              {isStaffing
+                ? posterBoys.map((pb) => <PosterBoyCard key={pb._id} posterBoy={pb} />)
+                : businesses.map((biz) => <UserBusinessCard key={biz._id} business={biz} detailHref={`/businesses/${biz._id}`} />)}
             </div>
           ) : (
             <div className={`flex flex-col items-center justify-center py-20 rounded-2xl border shadow-sm ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-brand-border'}`}>
               <img src="/data-not-found.png" alt="No Data Found" className="mb-4 h-48 w-48 object-contain" />
               <h3 className={`mb-1 text-base font-semibold ${isDark ? 'text-gray-200' : 'text-brand-navy'}`}>No Data Found in Database</h3>
               <p className="max-w-xs text-sm text-center text-brand-muted">
-                {savedCity
-                  ? `No businesses found in this category in ${savedCity} yet. Change your location from the search bar above.`
-                  : 'No businesses found in this category yet. Check back soon!'}
+                {isStaffing
+                  ? savedCity
+                    ? `No approved ${categoryName} available in ${savedCity} yet. Change your location from the search bar above.`
+                    : `No approved ${categoryName} available yet. Check back soon!`
+                  : savedCity
+                    ? `No businesses found in this category in ${savedCity} yet. Change your location from the search bar above.`
+                    : 'No businesses found in this category yet. Check back soon!'}
               </p>
             </div>
           )}

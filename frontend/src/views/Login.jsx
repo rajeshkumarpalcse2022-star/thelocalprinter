@@ -32,6 +32,8 @@ const Login = () => {
         else if (onboarding.firstBusinessStatus === "pending") router.push("/vendor/pending");
         else if (onboarding.firstBusinessStatus === "rejected") router.push("/vendor/businesses");
         else router.push("/vendor/dashboard");
+      } else if (user.role === "POSTER_BOY") {
+        router.push(user.approvalStatus === "approved" ? "/posterboy/dashboard" : "/posterboy/pending");
       } else {
         const redirectMap = { ADMIN: "/admin/dashboard", USER: "/user/dashboard/wishlist" };
         router.push(redirectMap[user.role] || "/user/dashboard/wishlist");

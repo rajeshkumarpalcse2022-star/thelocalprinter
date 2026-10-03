@@ -858,7 +858,7 @@ exports.getCategories = async (req, res) => {
 
 exports.createCategory = async (req, res) => {
   try {
-    const { name, description, type, parentId, image } = req.body;
+    const { name, description, type, parentId, image, kind } = req.body;
     const categoryType = type || "parent";
 
     if (!name || !name.trim()) {
@@ -901,6 +901,8 @@ exports.createCategory = async (req, res) => {
       type: categoryType,
       parentId: categoryType === "subcategory" ? parentId : null,
       image: categoryType === "parent" ? (image || "") : "",
+      // Staffing categories list people (Poster Boy), never businesses.
+      kind: categoryType === "parent" && kind === "staffing" ? "staffing" : "business",
     });
 
     res.status(201).json({
@@ -925,7 +927,7 @@ exports.createCategory = async (req, res) => {
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, parentId, image } = req.body;
+    const { name, description, parentId, image, kind } = req.body;
 
     const category = await Category.findById(id);
     if (!category) {
@@ -966,6 +968,10 @@ exports.updateCategory = async (req, res) => {
 
     if (category.type === "parent" && image !== undefined) {
       category.image = image || "";
+    }
+
+    if (category.type === "parent" && kind !== undefined) {
+      category.kind = kind === "staffing" ? "staffing" : "business";
     }
 
     await category.save();
@@ -1428,11 +1434,12 @@ exports.updateUserApprovalStatus = async (req, res) => {
       });
     }
 
-    // Approval is a vendor-only gate. Users and resellers never need admin approval.
-    if (user.role !== "VENDOR") {
+    // Account approval only applies to roles whose sign-up is gated by the
+    // admin: vendors (legacy) and poster boys. Regular users are never held.
+    if (![ROLES.VENDOR, ROLES.POSTER_BOY].includes(user.role)) {
       return res.status(400).json({
         success: false,
-        message: "Approval is only available for vendor accounts",
+        message: "Approval is only available for vendor or poster boy accounts",
       });
     }
 
@@ -1446,7 +1453,7 @@ exports.updateUserApprovalStatus = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: `Vendor account ${status}`,
+      message: `${user.role === ROLES.POSTER_BOY ? "Poster boy" : "Vendor"} account ${status}`,
       data: { user: updatedUser },
     });
   } catch (error) {

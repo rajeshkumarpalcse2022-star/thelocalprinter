@@ -4,8 +4,9 @@ import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import PageHero from '@/components/common/PageHero';
 import UserBusinessCard from '@/components/user/UserBusinessCard';
+import PosterBoyCard from '@/components/user/PosterBoyCard';
 import { ChevronRight } from 'lucide-react';
-import { getActiveCategories } from '@/services/userService';
+import { getActiveCategories, getPublicPosterBoys } from '@/services/userService';
 import { getSavedCity, onSavedLocationChange } from '@/lib/savedLocation';
 import { mergeCategories } from '@/data/vendorCategories';
 import api from '@/services/api';
@@ -27,6 +28,9 @@ export default function SubCategoryPage({ params }) {
 
   const parentCategory = categories.find((c) => c.slug === slug);
   const subCategory = parentCategory?.services?.find((s) => s.slug === subCategorySlug);
+  // Staffing parents (e.g. "Poster Boy") list people filtered by skill.
+  const isStaffing = parentCategory?.kind === 'staffing';
+  const [posterBoys, setPosterBoys] = useState([]);
 
   // Listings follow the saved location (auto-detected or typed by the visitor)
   // and refetch whenever it changes.
@@ -38,6 +42,17 @@ export default function SubCategoryPage({ params }) {
   useEffect(() => {
     if (!subCategory || !parentCategory) return;
     setBizLoading(true);
+    if (isStaffing) {
+      setBusinesses([]);
+      const params = { limit: 12, serviceId: subCategory._id };
+      if (savedCity) params.city = savedCity;
+      getPublicPosterBoys(params)
+        .then((res) => setPosterBoys(res.data?.posterBoys || []))
+        .catch(() => setPosterBoys([]))
+        .finally(() => setBizLoading(false));
+      return;
+    }
+    setPosterBoys([]);
     // Match businesses that actually selected this subcategory (serviceIds
     // stores the same id the vendor form writes — real DB id or the static
     // pseudo-id for the 9 core categories), plus the saved location.
@@ -47,7 +62,7 @@ export default function SubCategoryPage({ params }) {
       .then((res) => setBusinesses(res.data?.data?.businesses || []))
       .catch(() => setBusinesses([]))
       .finally(() => setBizLoading(false));
-  }, [subCategory?._id, parentCategory?._id, parentCategory?.name, savedCity]);
+  }, [subCategory?._id, parentCategory?._id, parentCategory?.name, isStaffing, savedCity]);
 
   if (!loading && !parentCategory) {
     return (
@@ -93,7 +108,9 @@ export default function SubCategoryPage({ params }) {
         <h2 className="text-[24px] font-extrabold text-brand-navy mb-6">
           {bizLoading
             ? 'Loading...'
-            : `${subcategoryName} Businesses (${businesses.length})${savedCity ? ` in ${savedCity}` : ''}`}
+            : isStaffing
+              ? `${subcategoryName} Poster Boys (${posterBoys.length})${savedCity ? ` in ${savedCity}` : ''}`
+              : `${subcategoryName} Businesses (${businesses.length})${savedCity ? ` in ${savedCity}` : ''}`}
         </h2>
         {bizLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -101,18 +118,24 @@ export default function SubCategoryPage({ params }) {
               <div key={i} className="bg-white rounded-2xl border border-brand-border h-[280px] animate-pulse" />
             ))}
           </div>
-        ) : businesses.length > 0 ? (
+        ) : (isStaffing ? posterBoys.length > 0 : businesses.length > 0) ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {businesses.map((biz) => <UserBusinessCard key={biz._id} business={biz} detailHref={`/businesses/${biz._id}`} />)}
+            {isStaffing
+              ? posterBoys.map((pb) => <PosterBoyCard key={pb._id} posterBoy={pb} />)
+              : businesses.map((biz) => <UserBusinessCard key={biz._id} business={biz} detailHref={`/businesses/${biz._id}`} />)}
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-12 text-center bg-white rounded-2xl border border-brand-border shadow-sm">
             <img src="/data-not-found.png" alt="No Data Found" className="mb-4 h-48 w-48 object-contain" />
             <h3 className="mb-1 text-base font-semibold text-brand-navy">No Data Found in Database</h3>
             <p className="max-w-xs text-sm text-brand-muted">
-              {savedCity
-                ? `No approved businesses yet for ${subcategoryName} in ${savedCity}. Change your location from the search bar above.`
-                : `No approved businesses yet for ${subcategoryName}. Check back soon!`}
+              {isStaffing
+                ? savedCity
+                  ? `No approved ${subcategoryName} available in ${savedCity}. Change your location from the search bar above.`
+                  : `No approved ${subcategoryName} available yet. Check back soon!`
+                : savedCity
+                  ? `No approved businesses yet for ${subcategoryName} in ${savedCity}. Change your location from the search bar above.`
+                  : `No approved businesses yet for ${subcategoryName}. Check back soon!`}
             </p>
           </div>
         )}

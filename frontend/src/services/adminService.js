@@ -124,6 +124,22 @@ export const updateProfileChangeStatus = async (id, status) => {
   return response.data;
 };
 
+// ─── Poster Boys ───
+
+export const getPosterBoys = async (page = 1, search = "") => {
+  const response = await api.get("/admin/poster-boys", {
+    params: { page, search },
+  });
+  return response.data;
+};
+
+export const updatePosterBoyProfileStatus = async (id, status) => {
+  const response = await api.patch(`/admin/poster-boys/${id}/profile-status`, {
+    status,
+  });
+  return response.data;
+};
+
 // ─── Categories ───
 
 export const getCategories = async (page = 1, search = "", limit = 50) => {

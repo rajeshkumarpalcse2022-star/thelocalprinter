@@ -40,6 +40,10 @@ const {
   getAdminReviews,
   toggleReviewVisibility,
 } = require("../controllers/reviewController");
+const {
+  getPosterBoys,
+  adminUpdateProfileStatus,
+} = require("../controllers/posterBoyController");
 
 const router = express.Router();
 
@@ -71,6 +75,9 @@ router.delete("/businesses/:id", deleteBusiness);
 
 router.get("/approvals", getPendingApprovals);
 router.get("/approvals/count", getPendingApprovalsCount);
+
+router.get("/poster-boys", getPosterBoys);
+router.patch("/poster-boys/:id/profile-status", adminUpdateProfileStatus);
 
 router.get("/categories", getCategories);
 router.post("/categories", createCategory);

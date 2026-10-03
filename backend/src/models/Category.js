@@ -31,6 +31,14 @@ const categorySchema = new mongoose.Schema(
       ref: "Category",
       default: null,
     },
+    // "business"  -> a printing/business category (vendor may pick it)
+    // "staffing"  -> a people/service-provider category (e.g. Poster Boy);
+    //                never selectable as a business category.
+    kind: {
+      type: String,
+      enum: ["business", "staffing"],
+      default: "business",
+    },
     image: {
       type: String,
       default: "",
@@ -80,6 +88,7 @@ categorySchema.index({ slug: 1 });
 categorySchema.index({ isActive: 1 });
 categorySchema.index({ type: 1 });
 categorySchema.index({ parentId: 1 });
+categorySchema.index({ kind: 1 });
 
 const Category = mongoose.model("Category", categorySchema);
 

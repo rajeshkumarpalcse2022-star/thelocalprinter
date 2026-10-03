@@ -271,7 +271,10 @@ const AdminBusinessEditPage = () => {
 
   useEffect(() => {
     api.get("/user/public/categories").then((res) => {
-      setCategories(mergeCategories(res.data.data.categories || []));
+      // Staffing categories (Poster Boy) are never a business category.
+      setCategories(
+        mergeCategories(res.data.data.categories || []).filter((c) => c.kind !== "staffing")
+      );
     }).catch(() => {});
   }, []);
 

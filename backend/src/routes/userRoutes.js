@@ -12,6 +12,8 @@ const {
   checkWishlist,
   getProfile,
   getPackage,
+  getPublicPosterBoys,
+  revealPosterBoyContact,
 } = require("../controllers/userController");
 const {
   createReview,
@@ -49,11 +51,14 @@ router.get("/public/businesses", getPublicBusinesses);
 router.get("/public/businesses/filters", getFilterOptions);
 router.get("/public/businesses/:id", getBusinessById);
 
+router.get("/public/poster-boys", getPublicPosterBoys);
+router.post("/public/poster-boys/:id/contact", revealPosterBoyContact);
+
 router.get("/public/categories", async (req, res) => {
   try {
     const parentCategories = await Category.find({ isActive: true, type: "parent" })
       .sort({ name: 1 })
-      .select("name slug description image");
+      .select("name slug description image kind");
 
     const parentIds = parentCategories.map((c) => c._id);
     const subcategories = await Category.find({

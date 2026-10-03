@@ -70,6 +70,7 @@ export default function Header() {
       case 'ADMIN': return '/admin/dashboard';
       case 'VENDOR': return '/vendor/dashboard';
       case 'USER': return '/user/dashboard/wishlist';
+      case 'POSTER_BOY': return '/posterboy/dashboard';
       default: return '/user/dashboard';
     }
   };

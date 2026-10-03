@@ -59,8 +59,19 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
       ADMIN: "/admin/dashboard",
       VENDOR: "/vendor/dashboard",
       USER: "/user/dashboard/wishlist",
+      POSTER_BOY: "/posterboy/dashboard",
     };
     return <Navigate to={redirectMap[user.role] || "/login"} replace />;
+  }
+
+  // Poster boys need admin approval before they can open their dashboard.
+  // /posterboy/pending is the only route they may see while unapproved.
+  if (
+    user.role === "POSTER_BOY" &&
+    user.approvalStatus !== "approved" &&
+    pathname !== "/posterboy/pending"
+  ) {
+    return <Navigate to="/posterboy/pending" replace />;
   }
 
   if (isBlockedVendorRoute && vendorCheckDone && vendorOnboarding) {

@@ -43,7 +43,7 @@ exports.signup = async (req, res) => {
     if (!Object.values(ROLES).includes(role)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid role. Account type must be USER or VENDOR.",
+        message: "Invalid role. Account type must be USER, VENDOR or POSTER_BOY.",
       });
     }
 
@@ -77,9 +77,11 @@ exports.signup = async (req, res) => {
       whatsappNumber: whatsappNumber || null,
       emailVerified: true,
       registrationType: registrationType || null,
-      // Accounts are never held for approval. A vendor signs up, fills the
-      // business registration form, and only that business goes to admin approval.
-      approvalStatus: "approved",
+      // USER/VENDOR accounts are never held for approval: a vendor signs up,
+      // fills the business registration form, and only that business goes to
+      // admin approval. Poster boys, however, are approved by the admin before
+      // they can access their dashboard.
+      approvalStatus: role === ROLES.POSTER_BOY ? "pending" : "approved",
     };
 
     const { generatePublicId } = require("../utils/publicId");
@@ -232,6 +234,16 @@ exports.login = async (req, res) => {
     }
 
     if (user.role === "VENDOR" && user.approvalStatus === "rejected") {
+      return res.status(403).json({
+        success: false,
+        message: "Your account has been rejected. Please contact support.",
+        rejected: true,
+      });
+    }
+
+    // Poster boys with a pending account ARE allowed to log in — they need to
+    // reach the "pending approval" screen. Only rejected accounts are blocked.
+    if (user.role === ROLES.POSTER_BOY && user.approvalStatus === "rejected") {
       return res.status(403).json({
         success: false,
         message: "Your account has been rejected. Please contact support.",

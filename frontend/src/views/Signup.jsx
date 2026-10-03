@@ -10,7 +10,7 @@ import {
   Mail, Lock, Eye, EyeOff, User, Printer, AlertCircle, Loader2,
   UserCheck, Store, Briefcase, Phone, Building2, MapPin, FileText,
   CreditCard, Upload, CheckCircle, ArrowLeft, ArrowRight, Send,
-  Clock, Shield, Video,
+  Clock, Shield, Video, Megaphone,
 } from "lucide-react";
 import { Card, CardContent } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -56,7 +56,10 @@ const Signup = () => {
 
   useEffect(() => { if (cooldown <= 0) return; const t = setTimeout(() => setCooldown((c) => c - 1), 1000); return () => clearTimeout(t); }, [cooldown]);
 
-  const isVendorFlow = role === "VENDOR";
+  // VENDOR and POSTER_BOY both skip the registration-type step: the account is
+  // created straight after OTP verification.
+  const isDirectFlow = role === "VENDOR" || role === "POSTER_BOY";
+  const isPosterBoyFlow = role === "POSTER_BOY";
 
   const validateStep1 = () => {
     const e = {};
@@ -110,7 +113,7 @@ const Signup = () => {
         return;
       }
       setOtpVerified(true); setOtpSuccess("Email verified successfully");
-      setTimeout(() => { isVendorFlow ? handleCompleteRegistration() : setStep(STEPS.SELECT_TYPE); }, 1000);
+      setTimeout(() => { isDirectFlow ? handleCompleteRegistration() : setStep(STEPS.SELECT_TYPE); }, 1000);
     } catch (err) { setOtpError(err.response?.data?.message || "Invalid OTP"); setOtp(["", "", "", "", "", ""]); otpRefs.current[0]?.focus(); }
     finally { setVerifyLoading(false); }
   };
@@ -131,9 +134,10 @@ const Signup = () => {
         setLoading(false);
         return;
       }
-      if (isVendorFlow) {
-        await signup(fullName.trim(), email.toLowerCase().trim(), password, "VENDOR", { fullName: fullName.trim(), email: email.toLowerCase().trim(), password, role: "VENDOR", whatsappNumber: whatsappNumber.trim() || undefined });
-        router.push("/vendor/businesses/new");
+      if (isDirectFlow) {
+        const posterBoy = role === "POSTER_BOY";
+        await signup(fullName.trim(), email.toLowerCase().trim(), password, role, { fullName: fullName.trim(), email: email.toLowerCase().trim(), password, role, whatsappNumber: whatsappNumber.trim() || undefined });
+        router.push(posterBoy ? "/posterboy/pending" : "/vendor/businesses/new");
         return;
       }
       const payload = { fullName: fullName.trim(), email: email.toLowerCase().trim(), password, role: "USER", whatsappNumber: whatsappNumber.trim() || undefined, registrationType };
@@ -157,31 +161,32 @@ const Signup = () => {
 
   const getPageTitle = () => {
     if (step === STEPS.ROLE_SELECT) return "Create Account";
-    if (step === STEPS.BASIC_INFO) return isVendorFlow ? "Vendor Registration" : "Create Account";
+    if (step === STEPS.BASIC_INFO) return isPosterBoyFlow ? "Poster Boy Registration" : isDirectFlow ? "Vendor Registration" : "Create Account";
     if (step === STEPS.OTP_VERIFY) return "Verify Email";
     if (step === STEPS.SELECT_TYPE) return "Choose Registration Type";
-    return isVendorFlow ? "Vendor Registration" : registrationType === "RESELLER" ? "Reseller Application" : "Complete Registration";
+    return isPosterBoyFlow ? "Poster Boy Registration" : isDirectFlow ? "Vendor Registration" : registrationType === "RESELLER" ? "Reseller Application" : "Complete Registration";
   };
 
   const getPageSubtitle = () => {
     if (step === STEPS.ROLE_SELECT) return "Join Local Printer today";
-    if (step === STEPS.BASIC_INFO) return isVendorFlow ? "List your business on Local Printer" : "Join Local Printer today";
+    if (step === STEPS.BASIC_INFO) return isPosterBoyFlow ? "Paste and distribute flyers with Local Printer" : isDirectFlow ? "List your business on Local Printer" : "Join Local Printer today";
     if (step === STEPS.OTP_VERIFY) return "We'll send a verification code to your email";
     if (step === STEPS.SELECT_TYPE) return "Select how you'll use the platform";
     return "Fill in the required details";
   };
 
   const getStepNumber = () => {
-    switch (step) { case STEPS.ROLE_SELECT: return 1; case STEPS.BASIC_INFO: return 2; case STEPS.OTP_VERIFY: return 3; case STEPS.SELECT_TYPE: return 4; case STEPS.COMPLETE: return isVendorFlow ? 4 : 5; default: return 1; }
+    switch (step) { case STEPS.ROLE_SELECT: return 1; case STEPS.BASIC_INFO: return 2; case STEPS.OTP_VERIFY: return 3; case STEPS.SELECT_TYPE: return 4; case STEPS.COMPLETE: return isDirectFlow ? 4 : 5; default: return 1; }
   };
 
   const renderRoleSelect = () => (
     <>
       <p className="text-sm text-muted-foreground mb-5 text-center">How do you want to use Local Printer?</p>
-      <div className="grid grid-cols-2 gap-3 mb-5">
+      <div className="grid grid-cols-3 gap-3 mb-5">
         {[
           { value: "USER", icon: UserCheck, label: "User", desc: "Find printing services", active: "border-blue-500 bg-blue-500/5 text-blue-600 dark:text-blue-400", iconBg: "bg-blue-500/10 text-blue-500" },
           { value: "VENDOR", icon: Store, label: "Vendor", desc: "List your business", active: "border-orange-500 bg-orange-500/5 text-orange-600 dark:text-orange-400", iconBg: "bg-orange-500/10 text-orange-500" },
+          { value: "POSTER_BOY", icon: Megaphone, label: "Poster Boy", desc: "Paste & distribute flyers", active: "border-emerald-500 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400", iconBg: "bg-emerald-500/10 text-emerald-500" },
         ].map((r) => (
           <button key={r.value} type="button" onClick={() => { setRole(r.value); setStep(STEPS.BASIC_INFO); }}
             className={`flex flex-col items-center gap-1.5 p-4 rounded-xl border-2 transition-all cursor-pointer hover:shadow-md ${role === r.value ? r.active : "border-border bg-card hover:border-border/80"}`}>
@@ -283,8 +288,8 @@ const Signup = () => {
       <div className="flex gap-3 pt-2">
         <Button type="button" variant="outline" className="flex-1 h-11 gap-1" onClick={() => { setStep(STEPS.BASIC_INFO); setOtpSent(false); setOtpVerified(false); setOtp(["", "", "", "", "", ""]); setOtpError(""); setOtpSuccess(""); setServerError(""); }}><ArrowLeft size={14} /> Back</Button>
         {otpVerified && (
-          <Button type="button" className="flex-1 h-11 gap-1 bg-orange-600 hover:bg-orange-700 text-white" onClick={() => { isVendorFlow ? handleCompleteRegistration() : setStep(STEPS.SELECT_TYPE); }}>
-            {isVendorFlow ? "Create Account" : "Continue"} <ArrowRight size={14} />
+          <Button type="button" className="flex-1 h-11 gap-1 bg-orange-600 hover:bg-orange-700 text-white" onClick={() => { isDirectFlow ? handleCompleteRegistration() : setStep(STEPS.SELECT_TYPE); }}>
+            {isDirectFlow ? "Create Account" : "Continue"} <ArrowRight size={14} />
           </Button>
         )}
       </div>
@@ -507,7 +512,7 @@ const Signup = () => {
 
               {step !== STEPS.ROLE_SELECT && (
                 <div className="flex items-center justify-center gap-2 mb-5">
-                  {["Info", "Verify", ...(isVendorFlow ? [] : ["Type"]), "Done"].map((label, i) => {
+                  {["Info", "Verify", ...(isDirectFlow ? [] : ["Type"]), "Done"].map((label, i) => {
                     const current = getStepNumber(); const stepNum = i + 2; const isActive = current >= stepNum;
                     return (
                       <div key={label} className="flex items-center gap-1.5">
@@ -515,7 +520,7 @@ const Signup = () => {
                           {current > stepNum ? <CheckCircle size={12} /> : i + 1}
                         </div>
                         <span className={`text-xs hidden sm:inline ${current === stepNum ? "text-foreground font-semibold" : "text-muted-foreground"}`}>{label}</span>
-                        {i < (isVendorFlow ? 2 : 3) && <div className={`w-5 h-0.5 rounded ${current > stepNum ? "bg-orange-600" : "bg-muted"}`} />}
+                        {i < (isDirectFlow ? 2 : 3) && <div className={`w-5 h-0.5 rounded ${current > stepNum ? "bg-orange-600" : "bg-muted"}`} />}
                       </div>
                     );
                   })}

@@ -15,8 +15,13 @@ function generateRandomId(prefix) {
   return id;
 }
 
+const PUBLIC_ID_PREFIX = {
+  VENDOR: "VND",
+  POSTER_BOY: "PST",
+};
+
 async function generatePublicId(role) {
-  const prefix = role === "VENDOR" ? "VND" : "USR";
+  const prefix = PUBLIC_ID_PREFIX[role] || "USR";
   let publicId;
   let exists = true;
   let attempts = 0;

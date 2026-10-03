@@ -4,6 +4,14 @@ const Wishlist = require("../models/Wishlist");
 const Category = require("../models/Category");
 const Review = require("../models/Review");
 const Settings = require("../models/Settings");
+const PosterBoyProfile = require("../models/PosterBoyProfile");
+const { escapeRegex, distanceKm, applyGeoBounds, cityToken } = require("../utils/geo");
+const { POSTER_BOY_CATEGORY_SLUG } = require("../utils/posterBoyCategory");
+
+// Rate limit for the public "reveal contact" endpoint (per IP, per profile).
+const contactHits = new Map();
+const CONTACT_WINDOW_MS = 60 * 1000;
+const CONTACT_MAX_HITS = 10;
 
 exports.getDashboard = async (req, res) => {
   try {
@@ -64,10 +72,6 @@ exports.getPublicBusinesses = async (req, res) => {
 
     const query = { status: "approved", isActive: true };
 
-    // Escape user text used inside $regex so characters like ( ) [ ] + *
-    // cannot change the pattern meaning or break the query.
-    const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
     if (search) {
       const safeSearch = escapeRegex(search);
       const orConditions = [
@@ -79,9 +83,11 @@ exports.getPublicBusinesses = async (req, res) => {
       // Header search sends category/subcategory display names as free text
       // (e.g. "3D Printing"). Resolve them to category references so
       // businesses filed under that category/subcategory also match.
+      // Staffing categories (e.g. "Poster Boy") never match businesses.
       const matchedCats = await Category.find({
         name: { $regex: safeSearch, $options: "i" },
         isActive: true,
+        kind: { $ne: "staffing" },
       }).select("_id");
       if (matchedCats.length > 0) {
         const catIds = matchedCats.map((c) => c._id);
@@ -105,35 +111,21 @@ exports.getPublicBusinesses = async (req, res) => {
     // while businesses store only the city ("Mandirbazar"). Match on the city
     // token (text before the first comma) so display strings still match.
     if (city) {
-      const cityToken = (String(city).split(",")[0] || "").trim() || String(city).trim();
-      query.city = { $regex: escapeRegex(cityToken), $options: "i" };
+      query.city = { $regex: escapeRegex(cityToken(city)), $options: "i" };
     }
     if (serviceType) query.serviceType = serviceType;
     if (customerType) query.customerType = customerType;
     if (orderingMethod) query.orderingMethod = orderingMethod;
     if (orderLimits) query.orderLimits = orderLimits;
 
-    const haversine = (lat1, lon1, lat2, lon2) => {
-      const R = 6371;
-      const dLat = ((lat2 - lat1) * Math.PI) / 180;
-      const dLon = ((lon2 - lon1) * Math.PI) / 180;
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos((lat1 * Math.PI) / 180) *
-          Math.cos((lat2 * Math.PI) / 180) *
-          Math.sin(dLon / 2) *
-          Math.sin(dLon / 2);
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    };
-
-    const useGeo = lat !== null && lng !== null && radius > 0;
-    if (useGeo) {
-      const latRad = (lat * Math.PI) / 180;
-      const deltaLat = (radius / 6371) * (180 / Math.PI);
-      const deltaLng = deltaLat / Math.cos(latRad);
-      query["gpsCoordinates.lat"] = { $gte: lat - deltaLat, $lte: lat + deltaLat };
-      query["gpsCoordinates.lng"] = { $gte: lng - deltaLng, $lte: lng + deltaLng };
-    }
+    const useGeo = applyGeoBounds(
+      query,
+      lat,
+      lng,
+      radius,
+      "gpsCoordinates.lat",
+      "gpsCoordinates.lng"
+    );
 
     let allBusinesses;
     if (minRating > 0 || useGeo) {
@@ -215,7 +207,7 @@ exports.getPublicBusinesses = async (req, res) => {
       obj.ratingSummary = allRatingMap[b._id.toString()] || { averageRating: 0, reviewCount: 0 };
       obj.isWishlisted = allWishlistSet.has(b._id.toString());
       if (useGeo && obj.gpsCoordinates?.lat && obj.gpsCoordinates?.lng) {
-        obj.distance = Math.round(haversine(lat, lng, obj.gpsCoordinates.lat, obj.gpsCoordinates.lng) * 10) / 10;
+        obj.distance = distanceKm(lat, lng, obj.gpsCoordinates.lat, obj.gpsCoordinates.lng);
       }
       return obj;
     });
@@ -507,7 +499,11 @@ exports.getLocationAutocomplete = async (req, res) => {
 
 exports.getFilterOptions = async (req, res) => {  try {
     const [activeParentCategories, cities] = await Promise.all([
-      Category.find({ isActive: true, type: "parent" }).sort({ name: 1 }).select("name slug image"),
+      // Business filters only: staffing categories (e.g. "Poster Boy") are
+      // browsed through their own pages, never chosen as a business category.
+      Category.find({ isActive: true, type: "parent", kind: { $ne: "staffing" } })
+        .sort({ name: 1 })
+        .select("name slug image"),
       Business.distinct("city", { status: "approved", isActive: true, city: { $ne: "" } }),
     ]);
 
@@ -757,3 +753,190 @@ exports.getPackage = async (req, res) => {
     });
   }
 };
+
+// ───────────────────────────────────────────────────────────── Poster Boys (public)
+
+/** One predicate for "may appear publicly" — reused by list + contact. */
+const isListablePosterBoy = (user) =>
+  !!user &&
+  user.role === "POSTER_BOY" &&
+  user.isActive === true &&
+  user.approvalStatus === "approved";
+
+const maskContact = (value) => {
+  const s = String(value || "").replace(/\D/g, "");
+  if (s.length < 5) return value ? "•••••" : "";
+  return `${s.slice(0, 5)}•••${s.slice(-2)}`;
+};
+
+/**
+ * Public allowlist only. Never include aadhaar, email, phone or pendingChange —
+ * build the object explicitly instead of serialising the document.
+ */
+const toPublicPosterBoy = (profile, user, distance) => {
+  const workMedia = (profile.workMedia || [])
+    .filter((m) => m && m.url)
+    .map((m) => ({ url: m.url, resourceType: m.resourceType }));
+  const cover = workMedia.find((m) => m.resourceType === "image") || null;
+  return {
+    _id: profile._id,
+    publicId: user.publicId || null,
+    fullName: user.fullName,
+    city: profile.city || "",
+    address: profile.address || "",
+    languages: profile.languages || [],
+    skills: profile.skills || [],
+    skillIds: profile.skillIds || [],
+    categoryId: profile.categoryId || null,
+    workMedia,
+    coverImage: cover ? cover.url : "",
+    gpsCoordinates: profile.gpsCoordinates || { lat: null, lng: null },
+    ...(distance !== undefined ? { distance } : {}),
+    contactHint: maskContact(user.whatsappNumber || user.phone),
+    profileCompleted: profile.profileCompleted,
+    submittedAt: profile.updatedAt,
+  };
+};
+
+// GET /api/user/public/poster-boys
+exports.getPublicPosterBoys = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(48, Math.max(1, parseInt(req.query.limit, 10) || 12));
+    const skip = (page - 1) * limit;
+    const search = (req.query.search || "").trim();
+    const serviceId = req.query.serviceId || "";
+    const categoryId = req.query.categoryId || "";
+    const city = req.query.city || "";
+    const lat = parseFloat(req.query.lat) || null;
+    const lng = parseFloat(req.query.lng) || null;
+    const radius = parseFloat(req.query.radius) || 0;
+
+    const query = { status: "approved", profileCompleted: true };
+
+    if (serviceId) {
+      query.skillIds = { $in: [serviceId] };
+    } else if (categoryId) {
+      query.categoryId = categoryId;
+    }
+    if (city) {
+      query.city = { $regex: escapeRegex(cityToken(city)), $options: "i" };
+    }
+    if (search) {
+      const safe = escapeRegex(search);
+      query.$or = [
+        { skills: { $regex: safe, $options: "i" } },
+        { city: { $regex: safe, $options: "i" } },
+        { address: { $regex: safe, $options: "i" } },
+      ];
+    }
+
+    const useGeo = applyGeoBounds(
+      query,
+      lat,
+      lng,
+      radius,
+      "gpsCoordinates.lat",
+      "gpsCoordinates.lng"
+    );
+
+    const profiles = await PosterBoyProfile.find(query);
+    const userIds = [...new Set(profiles.map((p) => String(p.user)))];
+
+    const users = userIds.length
+      ? await User.find({
+          _id: { $in: userIds },
+          role: "POSTER_BOY",
+          isActive: true,
+          approvalStatus: "approved",
+        }).select("fullName publicId phone whatsappNumber")
+      : [];
+    const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+    let items = profiles
+      .filter((p) => userMap.has(String(p.user)))
+      .map((p) => {
+        const user = userMap.get(String(p.user));
+        const hasPoint = p.gpsCoordinates?.lat && p.gpsCoordinates?.lng;
+        const distance =
+          useGeo && hasPoint ? distanceKm(lat, lng, p.gpsCoordinates.lat, p.gpsCoordinates.lng) : undefined;
+        return toPublicPosterBoy(p, user, distance);
+      });
+
+    if (useGeo) {
+      items = items
+        .filter((i) => i.distance !== undefined && i.distance <= radius)
+        .sort((a, b) => a.distance - b.distance);
+    } else {
+      items.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+    }
+
+    const total = items.length;
+    const paginated = items.slice(skip, skip + limit);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        posterBoys: paginated,
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) || 1 },
+      },
+    });
+  } catch (error) {
+    console.error("Get public poster boys error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// POST /api/user/public/poster-boys/:id/contact  (rate limited)
+exports.revealPosterBoyContact = async (req, res) => {
+  try {
+    const ip =
+      (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+      req.socket.remoteAddress ||
+      "unknown";
+    const key = `${ip}`;
+    const now = Date.now();
+    const hit = contactHits.get(key);
+    if (!hit || now - hit.start > CONTACT_WINDOW_MS) {
+      contactHits.set(key, { start: now, count: 1 });
+    } else {
+      hit.count += 1;
+      if (hit.count > CONTACT_MAX_HITS) {
+        return res
+          .status(429)
+          .json({ success: false, message: "Too many requests. Please try again later." });
+      }
+    }
+    if (contactHits.size > 5000) {
+      contactHits.forEach((v, k) => {
+        if (now - v.start > CONTACT_WINDOW_MS) contactHits.delete(k);
+      });
+    }
+
+    const profile = await PosterBoyProfile.findById(req.params.id);
+    if (!profile || profile.status !== "approved" || !profile.profileCompleted) {
+      return res.status(404).json({ success: false, message: "Poster boy not found" });
+    }
+
+    const user = await User.findById(profile.user);
+    if (!isListablePosterBoy(user)) {
+      return res.status(404).json({ success: false, message: "Poster boy not found" });
+    }
+
+    profile.leadCount = (profile.leadCount || 0) + 1;
+    await profile.save();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        whatsappNumber: user.whatsappNumber || null,
+        phone: user.phone || null,
+        leadCount: profile.leadCount,
+      },
+    });
+  } catch (error) {
+    console.error("Reveal poster boy contact error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+

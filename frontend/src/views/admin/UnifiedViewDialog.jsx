@@ -118,6 +118,7 @@ const ROLE_BADGE_COLORS = {
   ADMIN: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
   VENDOR: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
   USER: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  POSTER_BOY: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
 };
 
 const BUSINESS_TYPE_LABELS = {

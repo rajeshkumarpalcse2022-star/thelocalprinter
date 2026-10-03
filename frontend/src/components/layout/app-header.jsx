@@ -18,6 +18,7 @@ const roleColors = {
   admin: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   vendor: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
   user: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  poster_boy: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
 };
 
 export function AppHeader({

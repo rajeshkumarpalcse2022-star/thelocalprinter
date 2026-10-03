@@ -20,6 +20,8 @@ import { Textarea } from "../../components/ui/textarea";
 import { Label } from "../../components/ui/label";
 import CopyableId from "../../components/admin/CopyableId";
 import WatermarkLogo from "../../components/media/WatermarkLogo";
+import WatermarkDownloadButton from "../../components/media/WatermarkDownloadButton";
+import ProtectedVideo from "../../components/media/ProtectedVideo";
 import { useAuth } from "../../context/AuthContext";
 
 const ProfileSection = ({ title, icon: Icon, children }) => (
@@ -91,6 +93,13 @@ const ArrayField = ({ label, value }) => {
   );
 };
 
+const mediaFileName = (label) =>
+  `${String(label || "image")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "") || "image"}-the-local-printer.jpg`;
+
 const VideoPlayer = ({ url, label }) => {
   if (!url) {
     return (
@@ -103,11 +112,8 @@ const VideoPlayer = ({ url, label }) => {
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <div className="relative rounded-lg overflow-hidden bg-black">
-        <video src={url} controls className="w-full max-h-[300px] object-contain">
-          Your browser does not support the video tag.
-        </video>
-        <WatermarkLogo position="top-right" size="sm" />
+      <div className="rounded-lg overflow-hidden bg-black">
+        <ProtectedVideo src={url} label={label} className="rounded-lg" />
       </div>
     </div>
   );
@@ -132,6 +138,13 @@ const ImageViewer = ({ url, label }) => {
       >
         <img src={url} alt={label} className="w-full h-40 object-cover transition-transform group-hover:scale-105" />
         <WatermarkLogo position="top-right" size="sm" />
+        <WatermarkDownloadButton
+          url={url}
+          filename={mediaFileName(label)}
+          position="top-right"
+          ariaLabel={`Download ${label} with website logo`}
+          className="absolute bottom-2 left-2 z-30"
+        />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
           <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
@@ -141,9 +154,19 @@ const ImageViewer = ({ url, label }) => {
           <button className="absolute top-4 right-4 text-white hover:text-white/80 z-10" onClick={() => setOpen(false)}>
             <X className="h-6 w-6" />
           </button>
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
-            <img src={url} alt={label} className="max-w-full max-h-[90vh] object-contain rounded-lg" />
-            <WatermarkLogo position="bottom-right-lg" size="lg" />
+          <div className="flex flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+            <div className="relative">
+              <img src={url} alt={label} className="max-w-full max-h-[78vh] object-contain rounded-lg" />
+              <WatermarkLogo position="bottom-right-lg" size="lg" />
+            </div>
+            <WatermarkDownloadButton
+              url={url}
+              filename={mediaFileName(label)}
+              position="bottom-right-lg"
+              showLabel
+              ariaLabel={`Download ${label} with website logo`}
+              className="bg-white text-brand-navy"
+            />
           </div>
         </div>
       )}
@@ -170,6 +193,13 @@ const SlideshowViewer = ({ urls, label }) => {
       <div className="relative rounded-lg overflow-hidden border group cursor-pointer" onClick={() => setOpen(true)}>
         <img src={urls[current]} alt={`${label} ${current + 1}`} className="w-full h-40 object-cover" />
         <WatermarkLogo position="top-right" size="sm" />
+        <WatermarkDownloadButton
+          url={urls[current]}
+          filename={mediaFileName(`${label} ${current + 1}`)}
+          position="top-right"
+          ariaLabel={`Download ${label} image ${current + 1} with website logo`}
+          className="absolute bottom-2 left-2 z-30"
+        />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
           <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
@@ -207,9 +237,19 @@ const SlideshowViewer = ({ urls, label }) => {
           <button className="absolute top-4 right-4 text-white hover:text-white/80 z-10 p-2" onClick={() => setOpen(false)}>
             <X className="h-6 w-6" />
           </button>
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
-            <img src={urls[current]} alt={label} className="max-w-full max-h-[90vh] object-contain rounded-lg" />
-            <WatermarkLogo position="bottom-right-lg" size="lg" />
+          <div className="flex flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+            <div className="relative">
+              <img src={urls[current]} alt={label} className="max-w-full max-h-[78vh] object-contain rounded-lg" />
+              <WatermarkLogo position="bottom-right-lg" size="lg" />
+            </div>
+            <WatermarkDownloadButton
+              url={urls[current]}
+              filename={mediaFileName(`${label} ${current + 1}`)}
+              position="bottom-right-lg"
+              showLabel
+              ariaLabel={`Download ${label} image ${current + 1} with website logo`}
+              className="bg-white text-brand-navy"
+            />
           </div>
           {urls.length > 1 && (
             <>
@@ -498,6 +538,15 @@ const UserBusinessDetails = ({ publicMode = false }) => {
             <Building2 size={48} />
           )}
           {heroImage && <WatermarkLogo position="top-right" size="sm" />}
+          {heroImage && (
+            <WatermarkDownloadButton
+              url={heroImage}
+              filename={mediaFileName(`${business.name || "Business"} cover photo`)}
+              position="top-right"
+              ariaLabel="Download cover photo with website logo"
+              className="absolute bottom-3 left-3 z-30"
+            />
+          )}
           {hasCoords && (
             <span className="absolute top-3 left-3 z-10 inline-flex items-center gap-1 bg-emerald-600/95 text-white text-[11px] font-extrabold uppercase tracking-wide px-2.5 py-1.5 rounded-full backdrop-blur-sm shadow-sm">
               <BadgeCheck size={13} className="shrink-0" />

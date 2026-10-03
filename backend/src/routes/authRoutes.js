@@ -57,8 +57,8 @@ const signupValidation = [
   body("role")
     .notEmpty()
     .withMessage("Account type is required")
-    .isIn(["USER", "VENDOR"])
-    .withMessage("Account type must be USER or VENDOR"),
+    .isIn(["USER", "VENDOR", "POSTER_BOY"])
+    .withMessage("Account type must be USER, VENDOR or POSTER_BOY"),
 ];
 
 const loginValidation = [

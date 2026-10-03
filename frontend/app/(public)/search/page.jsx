@@ -13,11 +13,15 @@ import {
   Moon,
 } from 'lucide-react';
 import UserBusinessCard from '@/components/user/UserBusinessCard';
-import { searchPublicBusinesses, getPublicFilterOptions, getLocationAutocomplete } from '@/services/userService';
+import PosterBoyCard from '@/components/user/PosterBoyCard';
+import { searchPublicBusinesses, getPublicFilterOptions, getLocationAutocomplete, getPublicPosterBoys, getActiveCategories } from '@/services/userService';
 import { getSavedCity, clearLocation, onSavedLocationChange } from '@/lib/savedLocation';
 
-const RADIUS_OPTIONS = [5, 10, 25, 50];
-const RADIUS_DEFAULT = 5;
+// 0 = Off. Radius is opt-in: a city-level location (Near Me, typed city) must
+// list every business in that city, not only those within a few km of the
+// city-centre coordinates the geocoder returns.
+const RADIUS_OPTIONS = [0, 5, 10, 25, 50];
+const RADIUS_DEFAULT = 0;
 
 const CustomDropdown = ({ value, onChange, options, placeholder = "Select...", minWidth = "min-w-[220px]", align = "left", direction = "down" }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -107,6 +111,12 @@ function SearchContent() {
   const [filterOptions, setFilterOptions] = useState({ categories: [] });
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Staffing ("Poster Boy") results sit on top when the query names the
+  // category or one of its skills; businesses keep their own section.
+  const [staffingCategory, setStaffingCategory] = useState(null);
+  const [posterBoys, setPosterBoys] = useState([]);
+  const [pbLoading, setPbLoading] = useState(false);
+
   const [theme, setTheme] = useState('light');
 
   useEffect(() => {
@@ -138,6 +148,56 @@ function SearchContent() {
   }, []);
 
   useEffect(() => {
+    getActiveCategories()
+      .then(res => {
+        const cats = res?.data?.categories || [];
+        setStaffingCategory(cats.find(c => c.kind === 'staffing') || null);
+      })
+      .catch(() => setStaffingCategory(null));
+  }, []);
+
+  const query = keyword.trim().toLowerCase();
+  // "poster boy" (any casing) names the staffing category itself → list them all.
+  // A single skill name narrows it down through the free-text search instead.
+  const matchesStaffingName = !!(
+    staffingCategory &&
+    query &&
+    (query.includes("poster boy") ||
+      query.includes("poster-boy") ||
+      (staffingCategory.name || "").toLowerCase().includes(query))
+  );
+  const matchesStaffingSkill = !!(
+    staffingCategory &&
+    query &&
+    (staffingCategory.services || []).some(s =>
+      (s.name || "").toLowerCase().includes(query)
+    )
+  );
+  const showPosterBoys = matchesStaffingName || matchesStaffingSkill;
+
+  useEffect(() => {
+    if (!showPosterBoys) {
+      setPosterBoys([]);
+      setPbLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setPbLoading(true);
+    const params = { limit: 12 };
+    if (matchesStaffingName) {
+      params.categoryId = staffingCategory._id;
+    } else {
+      params.search = keyword.trim();
+    }
+    if (location.trim()) params.city = location.trim();
+    getPublicPosterBoys(params)
+      .then(res => { if (!cancelled) setPosterBoys(res?.data?.posterBoys || []); })
+      .catch(() => { if (!cancelled) setPosterBoys([]); })
+      .finally(() => { if (!cancelled) setPbLoading(false); });
+    return () => { cancelled = true; };
+  }, [showPosterBoys, matchesStaffingName, staffingCategory, keyword, location]);
+
+  useEffect(() => {
     const loc = (location || '').trim();
     if (!loc) {
       setSearchCoords(null);
@@ -163,10 +223,17 @@ function SearchContent() {
     return () => clearTimeout(t);
   }, [radius]);
 
-  const hasActiveFilters = !!(keyword.trim() || location.trim() || filterCategory !== 'All Categories' || filterService !== 'All services' || filterOrder !== 'All order types' || filterDeal !== 'B2B, B2C & both' || filterLimit !== 'Any' || filterRating !== 'Any rating');
+  const hasActiveFilters = !!(keyword.trim() || location.trim() || filterCategory !== 'All Categories' || filterService !== 'All services' || filterOrder !== 'All order types' || filterDeal !== 'B2B, B2C & both' || filterLimit !== 'Any' || filterRating !== 'Any rating' || radiusApplied > 0);
 
   const filtersRef = useRef({});
   filtersRef.current = { keyword, location, filterCategory, filterService, filterOrder, filterDeal, filterLimit, filterRating, filterOptions, radiusApplied, searchCoords };
+
+  // Only refetch when the geo parameters actually change (radius off → the
+  // reverse geocode finishing must not restart the search or flicker results).
+  const geoKey =
+    radiusApplied > 0 && searchCoords
+      ? `${searchCoords.lat},${searchCoords.lng},${radiusApplied}`
+      : '';
 
   const doFetch = useCallback(async (page = 1) => {
     const f = filtersRef.current;
@@ -223,7 +290,7 @@ function SearchContent() {
   useEffect(() => {
     doFetch(1);
     setCurrentPage(1);
-  }, [keyword, location, filterCategory, filterService, filterOrder, filterDeal, filterLimit, filterRating, filterOptions, radiusApplied, searchCoords, doFetch]);
+  }, [keyword, location, filterCategory, filterService, filterOrder, filterDeal, filterLimit, filterRating, filterOptions, geoKey, doFetch]);
 
   const handlePageChange = (newPage) => {
     setCurrentPage(newPage);
@@ -321,7 +388,7 @@ function SearchContent() {
                   </div>
                   <div className="flex flex-col md:col-span-2">
                     <label className={`text-[11px] font-extrabold uppercase tracking-wider mb-2 ${isDark ? 'text-gray-300' : 'text-brand-navy'}`}>
-                      Radius: <span className="text-brand-orange">{radius} KM</span>
+                      Radius: <span className="text-brand-orange">{radius === 0 ? 'Off' : `${radius} KM`}</span>
                     </label>
                     <div className={`border-b py-1.5 transition-colors ${isDark ? 'border-gray-600' : 'border-gray-100'}`}>
                       <input
@@ -330,13 +397,13 @@ function SearchContent() {
                         max={RADIUS_OPTIONS.length - 1}
                         step={1}
                         value={Math.max(0, RADIUS_OPTIONS.indexOf(radius))}
-                        onChange={(e) => setRadius(RADIUS_OPTIONS[Number(e.target.value)] || RADIUS_DEFAULT)}
+                        onChange={(e) => setRadius(RADIUS_OPTIONS[Number(e.target.value)] ?? RADIUS_DEFAULT)}
                         aria-label="Radius in kilometers"
                         className="w-full accent-brand-orange cursor-pointer touch-none"
                       />
                       <div className={`flex justify-between text-[11px] font-semibold mt-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
                         {RADIUS_OPTIONS.map((v) => (
-                          <span key={v} className={radius === v ? 'text-brand-orange' : ''}>{v} km</span>
+                          <span key={v} className={radius === v ? 'text-brand-orange' : ''}>{v === 0 ? 'Off' : `${v} km`}</span>
                         ))}
                       </div>
                     </div>
@@ -367,6 +434,40 @@ function SearchContent() {
               )}
             </div>
           </div>
+
+          {showPosterBoys && !loading && (
+            <section className="mb-10">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-1 h-6 rounded-full bg-brand-orange" />
+                <h3 className={`text-[18px] md:text-[20px] font-extrabold ${isDark ? 'text-gray-100' : 'text-brand-navy'}`}>
+                  Poster Boys
+                </h3>
+                <span className={`text-[13px] font-medium px-2.5 py-0.5 rounded-full ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-brand-orange/10 text-brand-orange'}`}>
+                  {pbLoading ? '...' : posterBoys.length}
+                </span>
+                {location.trim() && (
+                  <span className={`text-[12px] font-semibold px-2.5 py-0.5 rounded-full ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-slate-100 text-brand-navy'}`}>
+                    in {location.trim()}
+                  </span>
+                )}
+              </div>
+              {pbLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className={`${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} rounded-2xl border h-[280px] animate-pulse`} />
+                  ))}
+                </div>
+              ) : posterBoys.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {posterBoys.map(pb => <PosterBoyCard key={pb._id} posterBoy={pb} />)}
+                </div>
+              ) : (
+                <p className={`text-[14px] font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  No poster boys found here yet. Try another location or skill.
+                </p>
+              )}
+            </section>
+          )}
 
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20">
@@ -401,8 +502,16 @@ function SearchContent() {
               <div className={`w-[72px] h-[72px] mb-6 flex items-center justify-center rounded-full ${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
                 <Search className={`w-8 h-8 ${isDark ? 'text-gray-500' : 'text-gray-300'}`} strokeWidth={2.5} />
               </div>
-              <h3 className={`text-[22px] font-extrabold mb-2 ${isDark ? 'text-gray-100' : 'text-brand-navy'}`}>No businesses found nearby</h3>
-              <p className={`text-[15px] font-medium mb-8 max-w-[400px] ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Try adjusting your search filters or expanding the area to find what you're looking for.</p>
+              <h3 className={`text-[22px] font-extrabold mb-2 ${isDark ? 'text-gray-100' : 'text-brand-navy'}`}>
+                {showPosterBoys && posterBoys.length > 0
+                  ? 'No printing businesses found for this query'
+                  : 'No businesses found nearby'}
+              </h3>
+              <p className={`text-[15px] font-medium mb-8 max-w-[400px] ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                {showPosterBoys && posterBoys.length > 0
+                  ? 'Poster boys are listed above. Try another keyword or clear filters.'
+                  : "Try adjusting your search filters or expanding the area to find what you're looking for."}
+              </p>
               <button onClick={clearAllFilters}
                 className="bg-[#1C364F] hover:bg-[#122538] text-white px-8 py-3.5 rounded-full font-bold text-[14px] transition-all shadow-md hover:shadow-lg flex items-center gap-2">
                 <X className="w-4 h-4" /> Clear All Filters

@@ -97,3 +97,14 @@ export const getLocationAutocomplete = async (query, limit = 5, signal) => {
   });
   return response.data;
 };
+
+// Public Poster Boys (category pages + search results)
+export const getPublicPosterBoys = async (params = {}) => {
+  const response = await api.get("/user/public/poster-boys", { params });
+  return response.data;
+};
+
+export const revealPosterBoyContact = async (id) => {
+  const response = await api.post(`/user/public/poster-boys/${id}/contact`);
+  return response.data;
+};
