@@ -11,6 +11,8 @@ import {
   MessageCircle,
   BadgeCheck,
   Video,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -29,6 +31,7 @@ const PosterBoyCard = ({ posterBoy: p }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [contact, setContact] = useState(null);
+  const [imgIndex, setImgIndex] = useState(0);
 
   if (!p) return null;
 
@@ -37,6 +40,19 @@ const PosterBoyCard = ({ posterBoy: p }) => {
   const workVideos = (Array.isArray(p.workMedia) ? p.workMedia : []).filter(
     (m) => m && m.resourceType === "video" && m.url
   );
+  const workImages = (Array.isArray(p.workMedia) ? p.workMedia : [])
+    .filter((m) => m && m.resourceType === "image" && m.url)
+    .map((m) => m.url);
+  if (workImages.length === 0 && p.coverImage) workImages.push(p.coverImage);
+
+  const activeIndex = workImages.length ? imgIndex % workImages.length : 0;
+  const currentImage = workImages[activeIndex] || "";
+  const hasMultipleImages = workImages.length > 1;
+
+  const stepImage = (dir) => {
+    if (!hasMultipleImages) return;
+    setImgIndex((i) => (i + dir + workImages.length) % workImages.length);
+  };
 
   const isGpsVerified = !!(
     p.gpsCoordinates &&
@@ -69,9 +85,9 @@ const PosterBoyCard = ({ posterBoy: p }) => {
   return (
     <Card className="overflow-hidden flex flex-col">
       <div className="h-40 bg-gradient-to-br from-orange-50 to-amber-100 dark:from-orange-950/30 dark:to-amber-950/30 flex items-center justify-center text-brand-orange relative overflow-hidden shrink-0">
-        {p.coverImage ? (
+        {currentImage ? (
           <img
-            src={p.coverImage}
+            src={currentImage}
             alt={p.fullName || "Poster Boy"}
             className="w-full h-full object-cover"
             loading="lazy"
@@ -79,15 +95,38 @@ const PosterBoyCard = ({ posterBoy: p }) => {
         ) : (
           <Megaphone size={36} />
         )}
-        {p.coverImage && <WatermarkLogo position="bottom-right" size="sm" />}
-        {p.coverImage && (
+        {currentImage && <WatermarkLogo position="bottom-right" size="sm" />}
+        {currentImage && (
           <WatermarkDownloadButton
-            url={p.coverImage}
+            url={currentImage}
             position="bottom-right"
             filename={`poster-boy-${p.publicId || "work"}-work-photo.jpg`}
             ariaLabel="Download work photo with website logo"
             className="absolute bottom-2 left-2 z-30"
           />
+        )}
+        {hasMultipleImages && (
+          <>
+            <button
+              type="button"
+              onClick={() => stepImage(-1)}
+              aria-label="Previous image"
+              className="absolute left-2 top-1/2 z-30 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-black/80"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => stepImage(1)}
+              aria-label="Next image"
+              className="absolute right-2 top-1/2 z-30 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-black/80"
+            >
+              <ChevronRight size={18} />
+            </button>
+            <span className="absolute top-2 right-2 z-30 rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-bold tabular-nums text-white shadow-sm">
+              {activeIndex + 1}/{workImages.length}
+            </span>
+          </>
         )}
         <div className="absolute top-2.5 left-2.5 z-10 flex flex-col items-start gap-1.5">
           <span className="inline-flex items-center gap-1 bg-emerald-600/95 text-white text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full backdrop-blur-sm shadow-sm">
