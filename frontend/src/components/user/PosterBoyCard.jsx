@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   MessageCircle,
   BadgeCheck,
+  Video,
 } from "lucide-react";
 import { Card, CardContent } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -17,6 +18,7 @@ import { Button } from "../ui/button";
 import CopyableId from "../admin/CopyableId";
 import WatermarkLogo from "../media/WatermarkLogo";
 import WatermarkDownloadButton from "../media/WatermarkDownloadButton";
+import ProtectedVideo from "../media/ProtectedVideo";
 import { revealPosterBoyContact } from "@/services/userService";
 
 /**
@@ -32,6 +34,9 @@ const PosterBoyCard = ({ posterBoy: p }) => {
 
   const skills = Array.isArray(p.skills) ? p.skills : [];
   const languages = Array.isArray(p.languages) ? p.languages : [];
+  const workVideos = (Array.isArray(p.workMedia) ? p.workMedia : []).filter(
+    (m) => m && m.resourceType === "video" && m.url
+  );
 
   const isGpsVerified = !!(
     p.gpsCoordinates &&
@@ -97,6 +102,28 @@ const PosterBoyCard = ({ posterBoy: p }) => {
           )}
         </div>
       </div>
+
+      {workVideos.length > 0 && (
+        <div className="px-4 pt-3">
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <Video size={13} className="text-brand-orange" />
+            <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+              Work Videos
+            </span>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {workVideos.slice(0, 4).map((v, i) => (
+              <div key={v.url + i} className="w-44 shrink-0">
+                <ProtectedVideo
+                  src={v.url}
+                  label={`Work video ${i + 1}`}
+                  className="rounded-lg"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <CardContent className="p-4 flex flex-col gap-1.5 flex-1">
         <h3 className="text-sm font-bold text-foreground truncate">
