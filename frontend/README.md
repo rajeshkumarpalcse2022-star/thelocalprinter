@@ -1,4 +1,4 @@
-# Local Printer Frontend
+# The Local Printer Frontend
 
 React + Vite frontend for the Local Printer printing-services marketplace.
 
